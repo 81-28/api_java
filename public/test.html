@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h1>API Test</h1>
+
+    <h2>Add Data</h2>
+    <form id="addForm">
+        <label for="addName">Name:</label>
+        <input type="text" id="addName" name="name" required>
+        <label for="addDescription">Description:</label>
+        <input type="text" id="addDescription" name="description" required>
+        <button type="button" onclick="addData()">Add</button>
+    </form>
+
+    <h2>Get Data</h2>
+    <button type="button" onclick="getData()">Get All Data</button>
+
+    <h2>Delete Data</h2>
+    <form id="deleteForm">
+        <label for="deleteName">Name:</label>
+        <input type="text" id="deleteName" name="name" required>
+        <button type="button" onclick="deleteData()">Delete</button>
+    </form>
+
+    <h2>Response</h2>
+    <pre id="response"></pre>
+
+    <script>
+        const apiUrl = 'http://localhost:8080/api';
+
+        async function addData() {
+            const name = document.getElementById('addName').value;
+            const description = document.getElementById('addDescription').value;
+            const responseElement = document.getElementById('response');
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description })
+                });
+
+                const data = await response.json();
+                responseElement.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseElement.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function getData() {
+            const responseElement = document.getElementById('response');
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'GET'
+                });
+
+                const data = await response.json();
+                responseElement.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseElement.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function deleteData() {
+            const name = document.getElementById('deleteName').value;
+            const responseElement = document.getElementById('response');
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+
+                const data = await response.json();
+                responseElement.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseElement.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

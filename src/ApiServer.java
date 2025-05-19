@@ -1,3 +1,4 @@
+// package src;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
@@ -89,7 +90,7 @@ public class ApiServer {
 
         private List<String[]> fetchAllData() {
             List<String[]> data = new ArrayList<>();
-            String url = "jdbc:sqlite:database.db";
+            String url = "jdbc:sqlite:database/database.db";
             String sql = "SELECT id, name, description FROM users";
 
             try (Connection conn = DriverManager.getConnection(url);
@@ -112,7 +113,7 @@ public class ApiServer {
         }
 
         private void deleteFromDatabase(String name) {
-            String url = "jdbc:sqlite:database.db";
+            String url = "jdbc:sqlite:database/database.db";
             String sql = "DELETE FROM users WHERE name = ?";
 
             try (Connection conn = DriverManager.getConnection(url);
@@ -144,7 +145,7 @@ public class ApiServer {
         }
 
         private void saveToDatabase(String name, String description) {
-            String url = "jdbc:sqlite:database.db";
+            String url = "jdbc:sqlite:database/database.db";
             String sql = "INSERT INTO users(name, description) VALUES(?, ?)";
 
             try (Connection conn = DriverManager.getConnection(url);
@@ -173,7 +174,7 @@ public class ApiServer {
     }
 
     private static void initializeDatabase() {
-        String url = "jdbc:sqlite:database.db";
+        String url = "jdbc:sqlite:database/database.db";
         String sql = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT)";
 
         try (Connection conn = DriverManager.getConnection(url);
