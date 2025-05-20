@@ -17,52 +17,73 @@
             padding: 10px;
             border: 1px solid #ddd;
         }
+        #diff {
+            background: #222;
+            color: #eee;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        #diff .diff-add { color: #4caf50; background: #1e2d1e; display: block; }
+        #diff .diff-del { color: #f44336; background: #2d1e1e; display: block; }
+        #diff .diff-same { color: #bbb; display: block; }
+        #diff .diff-header { color: #42a5f5; font-weight: bold; display: block; }
+        #diff .diff-hunk { color: #ffeb3b; background: #444; font-weight: bold; display: block; }
     </style>
 </head>
 <body>
     <h1>API Test</h1>
 
-    <h2>Add Data</h2>
-    <form id="addForm">
-        <label for="addName">Name:</label>
-        <input type="text" id="addName" name="name" required>
-        <label for="addDescription">Description:</label>
-        <input type="text" id="addDescription" name="description" required>
-        <button type="button" onclick="addData()">Add</button>
+    <h2>Add / Update Data</h2>
+    <form id="editForm" onsubmit="event.preventDefault();">
+        <label for="editTitle">タイトル:</label>
+        <input type="text" id="editTitle" name="title" required onblur="fetchContentByTitle()">
+        <label for="editContent">内容:</label>
+        <textarea id="editContent" name="content" required rows="5" style="width:100%;resize:vertical;"></textarea>
+        <button type="button" onclick="addData()">追加</button>
+        <button type="button" onclick="updateData()">更新</button>
     </form>
 
     <h2>Get Data</h2>
     <button type="button" onclick="getData()">Get All Data</button>
 
     <h2>Delete Data</h2>
-    <form id="deleteForm">
-        <label for="deleteName">Name:</label>
-        <input type="text" id="deleteName" name="name" required>
+    <form id="deleteForm" onsubmit="event.preventDefault();">
+        <label for="deleteTitle">タイトル:</label>
+        <input type="text" id="deleteTitle" name="title" required>
         <button type="button" onclick="deleteData()">Delete</button>
     </form>
 
     <h2>Response</h2>
     <pre id="response"></pre>
+    <h2>Diff</h2>
+    <pre id="diff"></pre>
 
     <script>
         const apiUrl = 'http://localhost:8080/api';
 
         async function addData() {
-            const name = document.getElementById('addName').value;
-            const description = document.getElementById('addDescription').value;
+            const title = document.getElementById('editTitle').value;
+            const content = document.getElementById('editContent').value;
             const responseElement = document.getElementById('response');
+            const diffElement = document.getElementById('diff');
 
             try {
                 const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, description })
+                    body: JSON.stringify({ title, content })
                 });
-
                 const data = await response.json();
                 responseElement.textContent = JSON.stringify(data, null, 2);
+                diffElement.textContent = '';
+                document.getElementById('editTitle').value = '';
+                document.getElementById('editContent').value = '';
             } catch (error) {
                 responseElement.textContent = 'Error: ' + error.message;
+                diffElement.textContent = '';
             }
         }
 
@@ -82,14 +103,14 @@
         }
 
         async function deleteData() {
-            const name = document.getElementById('deleteName').value;
+            const title = document.getElementById('deleteTitle').value;
             const responseElement = document.getElementById('response');
 
             try {
                 const response = await fetch(apiUrl, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name })
+                    body: JSON.stringify({ title })
                 });
 
                 const data = await response.json();
@@ -97,6 +118,72 @@
             } catch (error) {
                 responseElement.textContent = 'Error: ' + error.message;
             }
+        }
+
+        async function updateData() {
+            const title = document.getElementById('editTitle').value;
+            const content = document.getElementById('editContent').value;
+            const responseElement = document.getElementById('response');
+            const diffElement = document.getElementById('diff');
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content })
+                });
+                const data = await response.json();
+                responseElement.textContent = JSON.stringify(data, null, 2);
+                if (data.oldContent !== undefined && data.newContent !== undefined) {
+                    // '\n' を本当の改行に変換してから表示
+                    const oldText = typeof data.oldContent === 'string' ? data.oldContent.replace(/\\n/g, '\n') : '';
+                    const newText = typeof data.newContent === 'string' ? data.newContent.replace(/\\n/g, '\n') : '';
+                    diffElement.innerHTML = renderSideBySide(oldText, newText);
+                } else {
+                    diffElement.textContent = '';
+                }
+                document.getElementById('editTitle').value = '';
+                document.getElementById('editContent').value = '';
+            } catch (error) {
+                responseElement.textContent = 'Error: ' + error.message;
+                diffElement.textContent = '';
+            }
+        }
+
+        async function fetchContentByTitle() {
+            const title = document.getElementById('editTitle').value;
+            if (!title) return;
+            try {
+                const response = await fetch(apiUrl, { method: 'GET' });
+                const data = await response.json();
+                if (data.data && Array.isArray(data.data)) {
+                    const found = data.data.find(item => item.title === title);
+                    if (found) {
+                        document.getElementById('editContent').value = found.content;
+                    } else {
+                        document.getElementById('editContent').value = '';
+                    }
+                }
+            } catch (e) {
+                // エラー時は内容欄を空に
+                document.getElementById('editContent').value = '';
+            }
+        }
+
+        function renderSideBySide(oldText, newText) {
+            // エスケープと改行処理
+            function escapeHtml(text) {
+                return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+            const oldLines = (oldText || '').split(/\r?\n/);
+            const newLines = (newText || '').split(/\r?\n/);
+            const maxLines = Math.max(oldLines.length, newLines.length);
+            let html = '<div style="display:flex;gap:16px;"><div style="flex:1;"><b>変更前</b><hr>'; // left
+            html += oldLines.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
+            html += '</div><div style="flex:1;"><b>変更後</b><hr>';
+            html += newLines.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
+            html += '</div></div>';
+            return html;
         }
     </script>
 </body>
