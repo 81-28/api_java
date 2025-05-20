@@ -178,6 +178,15 @@ public class ApiServer {
                 boolean success = deleteBranchById(idStr);
                 String jsonResponse = success ? "{\"message\":\"Branch deleted\",\"status\":\"success\"}" : "{\"message\":\"Branch not found\",\"status\":\"error\"}";
                 sendResponse(exchange, 200, jsonResponse);
+            } else if ("PUT".equals(method)) {
+                // ブランチのhead_commit_id付け替え
+                String requestBody;
+                try (Scanner scanner = new Scanner(exchange.getRequestBody()).useDelimiter("\\A")) { requestBody = scanner.hasNext() ? scanner.next() : ""; }
+                String branchIdStr = parseFieldFromJson(requestBody, "id");
+                String commitIdStr = parseFieldFromJson(requestBody, "commit_id");
+                boolean success = updateBranchHead(branchIdStr, commitIdStr);
+                String jsonResponse = success ? "{\"message\":\"Branch head updated\",\"status\":\"success\"}" : "{\"message\":\"Update failed\",\"status\":\"error\"}";
+                sendResponse(exchange, 200, jsonResponse);
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
@@ -732,15 +741,17 @@ public class ApiServer {
         String url = "jdbc:sqlite:database/database.db";
         List<String> nodes = new ArrayList<>();
         List<String> edges = new ArrayList<>();
+        List<String> branchPointers = new ArrayList<>(); // 追加: ブランチ→コミットの矢印
         try (Connection conn = DriverManager.getConnection(url)) {
             // 全ブランチ取得
-            String branchSql = "SELECT id, name FROM branch WHERE repository_id = ?";
+            String branchSql = "SELECT id, name, head_commit_id FROM branch WHERE repository_id = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(branchSql)) {
                 pstmt.setInt(1, Integer.parseInt(repositoryId));
                 try (ResultSet rs = pstmt.executeQuery()) {
                     while (rs.next()) {
                         int branchId = rs.getInt("id");
                         String branchName = rs.getString("name");
+                        int headCommitId = rs.getInt("head_commit_id");
                         // 各ブランチのコミットを取得
                         String commitSql = "SELECT id, message, parent_commit_id FROM git_commit WHERE branch_id = ?";
                         try (PreparedStatement cp = conn.prepareStatement(commitSql)) {
@@ -757,12 +768,34 @@ public class ApiServer {
                                 }
                             }
                         }
+                        // ブランチ→コミットの矢印（head_commit_idが0でなければ）
+                        if (headCommitId != 0) {
+                            branchPointers.add(String.format("{\"from\":\"branch-%d\",\"to\":%d,\"label\":\"%s\",\"color\":\"#f00\"}", branchId, headCommitId, branchName));
+                            // ブランチノードも追加
+                            nodes.add(String.format("{\"id\":\"branch-%d\",\"label\":\"%s\",\"shape\":\"ellipse\",\"color\":\"#f00\"}", branchId, branchName));
+                        }
                     }
                 }
             }
         } catch (SQLException | NumberFormatException e) {
             return "{\"nodes\":[],\"edges\":[],\"error\":\"" + e.getMessage() + "\"}";
         }
-        return String.format("{\"nodes\":[%s],\"edges\":[%s]}", String.join(",", nodes), String.join(",", edges));
+        // edges + branchPointers
+        List<String> allEdges = new ArrayList<>();
+        allEdges.addAll(edges);
+        allEdges.addAll(branchPointers);
+        return String.format("{\"nodes\":[%s],\"edges\":[%s]}", String.join(",", nodes), String.join(",", allEdges));
+    }
+    // ブランチのhead_commit_id付け替え
+    private static boolean updateBranchHead(String branchIdStr, String commitIdStr) {
+        String url = "jdbc:sqlite:database/database.db";
+        String sql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(url);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, Integer.parseInt(commitIdStr));
+            pstmt.setInt(2, Integer.parseInt(branchIdStr));
+            int affected = pstmt.executeUpdate();
+            return affected > 0;
+        } catch (SQLException | NumberFormatException e) { return false; }
     }
 }
