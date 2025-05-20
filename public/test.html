@@ -64,11 +64,15 @@
         <h2>コミット操作</h2>
         <form id="commitForm" onsubmit="event.preventDefault();">
             <label for="commitBranch">ブランチ:</label>
-            <select id="commitBranch"></select>
+            <select id="commitBranch" onchange="onCommitBranchChange()"></select>
             <label for="commitMessage">メッセージ:</label>
             <input type="text" id="commitMessage">
             <label for="commitAuthor">ユーザー:</label>
             <select id="commitAuthor"></select>
+            <br>
+            <label for="commitContent">内容:</label>
+            <textarea id="commitContent" rows="4" cols="60" placeholder="コミット内容"></textarea>
+            <br>
             <button type="button" onclick="createCommit()">コミット作成</button>
         </form>
         <label for="commitBranchList">ブランチで絞り込み:</label>
@@ -190,7 +194,7 @@
             });
             const data = await res.json();
             responseElement.textContent = JSON.stringify(data, null, 2);
-            getRepositories();
+            await afterDataChange();
         } catch (e) {
             responseElement.textContent = 'Error: ' + e.message;
         }
@@ -234,7 +238,7 @@
             });
             const data = await res.json();
             responseElement.textContent = JSON.stringify(data, null, 2);
-            getRepositories();
+            await afterDataChange();
         } catch (e) {
             responseElement.textContent = 'Error: ' + e.message;
         }
@@ -299,13 +303,14 @@
         const branch_id = document.getElementById('commitBranch').value;
         const message = document.getElementById('commitMessage').value;
         const author_id = document.getElementById('commitAuthor').value;
+        const content = document.getElementById('commitContent').value;
         const responseElement = document.getElementById('response');
         if (!branch_id || !message || !author_id) return;
         try {
             const res = await fetch(apiCommitUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch_id, message, author_id })
+                body: JSON.stringify({ branch_id, message, author_id, content })
             });
             const data = await res.json();
             responseElement.textContent = JSON.stringify(data, null, 2);
@@ -470,11 +475,71 @@
         await getRepositories();
         await getBranches();
         await getCommits();
+        updateCommitBranchSelect();
+        updateCommitBranchListSelect();
         await updateAllSelects();
     }
     // 主要操作の後にafterDataChangeを呼ぶように既存関数を修正してください
     // 初回ロード時
     window.onload = afterDataChange;
+
+    function updateCommitBranchSelect() {
+        const branchSelect = document.getElementById('commitBranch');
+        const repoId = document.getElementById('repoList').value;
+        branchSelect.innerHTML = '';
+        if (!repoId) return;
+        fetch(`/api/branch?repository_id=${repoId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.branches) return;
+                data.branches.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = b.name;
+                    branchSelect.appendChild(opt);
+                });
+                onCommitBranchChange(); // ブランチ初期値時も内容取得
+            });
+    }
+
+    function updateCommitBranchListSelect() {
+        const branchListSelect = document.getElementById('commitBranchList');
+        const repoId = document.getElementById('repoList').value;
+        branchListSelect.innerHTML = '';
+        if (!repoId) return;
+        fetch(`/api/branch?repository_id=${repoId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.branches) return;
+                data.branches.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = b.name;
+                    branchListSelect.appendChild(opt);
+                });
+            });
+    }
+
+    function onCommitBranchChange() {
+        const branchId = document.getElementById('commitBranch').value;
+        if (!branchId) return;
+        fetch(`/api/commit?branch_id=${branchId}`)
+            .then(res => res.json())
+            .then(commits => {
+                if (commits.length === 0) {
+                    document.getElementById('commitContent').value = '';
+                    return;
+                }
+                const latestCommit = commits[commits.length - 1];
+                // 最新コミットの内容取得
+                fetch(`/api/file?commit_id=${latestCommit.id}`)
+                    .then(res => res.json())
+                    .then(files => {
+                        // 仕様上、1ファイルのみ想定（複数なら先頭）
+                        document.getElementById('commitContent').value = files.length > 0 ? files[0].content : '';
+                    });
+            });
+    }
     </script>
 </body>
 </html>

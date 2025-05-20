@@ -197,7 +197,8 @@ public class ApiServer {
                 String branchIdStr = parseFieldFromJson(requestBody, "branch_id");
                 String message = parseFieldFromJson(requestBody, "message");
                 String authorIdStr = parseFieldFromJson(requestBody, "author_id");
-                boolean success = addCommit(branchIdStr, message, authorIdStr);
+                String content = parseFieldFromJson(requestBody, "content");
+                boolean success = addCommitWithContent(branchIdStr, message, authorIdStr, content);
                 String jsonResponse = success ? "{\"message\":\"Commit created\",\"status\":\"success\"}" : "{\"message\":\"Commit creation failed\",\"status\":\"error\"}";
                 sendResponse(exchange, 200, jsonResponse);
             } else if ("GET".equals(method)) {
@@ -315,10 +316,10 @@ public class ApiServer {
             "CREATE TABLE IF NOT EXISTS repository (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_id INTEGER)",
             // ブランチ
             "CREATE TABLE IF NOT EXISTS branch (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, repository_id INTEGER, head_commit_id INTEGER)",
-            // コミット
-            "CREATE TABLE IF NOT EXISTS commit (id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id INTEGER, author_id INTEGER, message TEXT, parent_commit_id INTEGER, created_at DATETIME)",
-            // ファイル
-            "CREATE TABLE IF NOT EXISTS file (id INTEGER PRIMARY KEY AUTOINCREMENT, commit_id INTEGER, filename TEXT, content TEXT)"
+            // コミット（予約語なので"git_commit"に変更）
+            "CREATE TABLE IF NOT EXISTS git_commit (id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id INTEGER, author_id INTEGER, message TEXT, parent_commit_id INTEGER, created_at DATETIME)",
+            // ファイル（予約語なので"file"で囲む）
+            "CREATE TABLE IF NOT EXISTS \"file\" (id INTEGER PRIMARY KEY AUTOINCREMENT, commit_id INTEGER, filename TEXT, content TEXT)"
         };
         try (Connection conn = DriverManager.getConnection(url)) {
             for (String sql : sqls) {
@@ -460,7 +461,7 @@ public class ApiServer {
     // コミット
     private static boolean addCommit(String branchIdStr, String message, String authorIdStr) {
         String url = "jdbc:sqlite:database/database.db";
-        String sql = "INSERT INTO commit(branch_id, author_id, message, created_at) VALUES(?, ?, ?, datetime('now'))";
+        String sql = "INSERT INTO git_commit(branch_id, author_id, message, created_at) VALUES(?, ?, ?, datetime('now'))";
         try (Connection conn = DriverManager.getConnection(url);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, Integer.parseInt(branchIdStr));
@@ -470,10 +471,67 @@ public class ApiServer {
             return true;
         } catch (SQLException | NumberFormatException e) { return false; }
     }
+    // コミット＋内容＋head更新
+    private static boolean addCommitWithContent(String branchIdStr, String message, String authorIdStr, String content) {
+        String url = "jdbc:sqlite:database/database.db";
+        Connection conn = null;
+        try {
+            conn = DriverManager.getConnection(url);
+            conn.setAutoCommit(false);
+            // 1. parent_commit_id取得
+            Integer parentCommitId = null;
+            String parentSql = "SELECT head_commit_id FROM branch WHERE id = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(parentSql)) {
+                pstmt.setInt(1, Integer.parseInt(branchIdStr));
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        parentCommitId = rs.getInt("head_commit_id");
+                        if (rs.wasNull()) parentCommitId = null;
+                    }
+                }
+            }
+            // 2. commit挿入
+            String commitSql = "INSERT INTO git_commit(branch_id, author_id, message, parent_commit_id, created_at) VALUES(?, ?, ?, ?, datetime('now'))";
+            int newCommitId = -1;
+            try (PreparedStatement pstmt = conn.prepareStatement(commitSql, PreparedStatement.RETURN_GENERATED_KEYS)) {
+                pstmt.setInt(1, Integer.parseInt(branchIdStr));
+                pstmt.setInt(2, Integer.parseInt(authorIdStr));
+                pstmt.setString(3, message);
+                if (parentCommitId != null) pstmt.setInt(4, parentCommitId); else pstmt.setNull(4, java.sql.Types.INTEGER);
+                pstmt.executeUpdate();
+                try (ResultSet rs = pstmt.getGeneratedKeys()) {
+                    if (rs.next()) newCommitId = rs.getInt(1);
+                }
+            }
+            if (newCommitId == -1) { conn.rollback(); return false; }
+            // 3. fileスナップショット保存（main.txt固定）
+            String fileSql = "INSERT INTO file(commit_id, filename, content) VALUES(?, ?, ?)";
+            try (PreparedStatement pstmt = conn.prepareStatement(fileSql)) {
+                pstmt.setInt(1, newCommitId);
+                pstmt.setString(2, "main.txt");
+                pstmt.setString(3, content);
+                pstmt.executeUpdate();
+            }
+            // 4. branchのhead_commit_id更新
+            String updateSql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
+                pstmt.setInt(1, newCommitId);
+                pstmt.setInt(2, Integer.parseInt(branchIdStr));
+                pstmt.executeUpdate();
+            }
+            conn.commit();
+            return true;
+        } catch (SQLException | NumberFormatException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ignore) {}
+            return false;
+        } finally {
+            if (conn != null) try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ignore) {}
+        }
+    }
     private static List<String[]> fetchAllCommits(String branchId) {
         List<String[]> commits = new ArrayList<>();
         String url = "jdbc:sqlite:database/database.db";
-        String sql = (branchId != null) ? "SELECT id, branch_id, author_id, message, parent_commit_id, created_at FROM commit WHERE branch_id = ?" : "SELECT id, branch_id, author_id, message, parent_commit_id, created_at FROM commit";
+        String sql = (branchId != null) ? "SELECT id, branch_id, author_id, message, parent_commit_id, created_at FROM git_commit WHERE branch_id = ?" : "SELECT id, branch_id, author_id, message, parent_commit_id, created_at FROM git_commit";
         try (Connection conn = DriverManager.getConnection(url);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             if (branchId != null) pstmt.setInt(1, Integer.parseInt(branchId));
@@ -487,7 +545,7 @@ public class ApiServer {
     }
     private static boolean deleteCommitById(String idStr) {
         String url = "jdbc:sqlite:database/database.db";
-        String sql = "DELETE FROM commit WHERE id = ?";
+        String sql = "DELETE FROM git_commit WHERE id = ?";
         try (Connection conn = DriverManager.getConnection(url);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, Integer.parseInt(idStr));
