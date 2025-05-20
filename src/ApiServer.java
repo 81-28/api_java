@@ -1,19 +1,18 @@
 // package src;
-import com.sun.net.httpserver.HttpServer;
-import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
-
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Scanner;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
 
 public class ApiServer {
 
@@ -316,7 +315,7 @@ public class ApiServer {
             // ブランチ
             "CREATE TABLE IF NOT EXISTS branch (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, repository_id INTEGER, head_commit_id INTEGER)",
             // コミット
-            "CREATE TABLE IF NOT EXISTS commit (id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id INTEGER, author_id INTEGER, message TEXT, parent_commit_id INTEGER, created_at DATETIME)",
+            "CREATE TABLE IF NOT EXISTS git_commit (id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id INTEGER, author_id INTEGER, message TEXT, parent_commit_id INTEGER, created_at DATETIME)",
             // ファイル
             "CREATE TABLE IF NOT EXISTS file (id INTEGER PRIMARY KEY AUTOINCREMENT, commit_id INTEGER, filename TEXT, content TEXT)"
         };
@@ -460,7 +459,7 @@ public class ApiServer {
     // コミット
     private static boolean addCommit(String branchIdStr, String message, String authorIdStr) {
         String url = "jdbc:sqlite:database/database.db";
-        String sql = "INSERT INTO commit(branch_id, author_id, message, created_at) VALUES(?, ?, ?, datetime('now'))";
+        String sql = "INSERT INTO git_commit(branch_id, author_id, message, created_at) VALUES(?, ?, ?, datetime('now'))";
         try (Connection conn = DriverManager.getConnection(url);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, Integer.parseInt(branchIdStr));
@@ -473,7 +472,7 @@ public class ApiServer {
     private static List<String[]> fetchAllCommits(String branchId) {
         List<String[]> commits = new ArrayList<>();
         String url = "jdbc:sqlite:database/database.db";
-        String sql = (branchId != null) ? "SELECT id, branch_id, author_id, message, parent_commit_id, created_at FROM commit WHERE branch_id = ?" : "SELECT id, branch_id, author_id, message, parent_commit_id, created_at FROM commit";
+        String sql = (branchId != null) ? "SELECT id, branch_id, author_id, message, parent_commit_id, created_at FROM git_commit WHERE branch_id = ?" : "SELECT id, branch_id, author_id, message, parent_commit_id, created_at FROM git_commit";
         try (Connection conn = DriverManager.getConnection(url);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             if (branchId != null) pstmt.setInt(1, Integer.parseInt(branchId));
@@ -487,7 +486,7 @@ public class ApiServer {
     }
     private static boolean deleteCommitById(String idStr) {
         String url = "jdbc:sqlite:database/database.db";
-        String sql = "DELETE FROM commit WHERE id = ?";
+        String sql = "DELETE FROM git_commit WHERE id = ?";
         try (Connection conn = DriverManager.getConnection(url);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, Integer.parseInt(idStr));
