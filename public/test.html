@@ -3,188 +3,478 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Test</title>
+    <title>バージョン管理サービスAPIテスト</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        form {
-            margin-bottom: 20px;
-        }
-        pre {
-            background-color: #f4f4f4;
-            padding: 10px;
-            border: 1px solid #ddd;
-        }
-        #diff {
-            background: #222;
-            color: #eee;
-            padding: 10px;
-            border-radius: 4px;
-            font-family: 'Consolas', 'Monaco', monospace;
-            white-space: pre-wrap;
-            overflow-x: auto;
-        }
-        #diff .diff-add { color: #4caf50; background: #1e2d1e; display: block; }
-        #diff .diff-del { color: #f44336; background: #2d1e1e; display: block; }
-        #diff .diff-same { color: #bbb; display: block; }
-        #diff .diff-header { color: #42a5f5; font-weight: bold; display: block; }
-        #diff .diff-hunk { color: #ffeb3b; background: #444; font-weight: bold; display: block; }
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        form { margin-bottom: 20px; }
+        pre { background-color: #f4f4f4; padding: 10px; border: 1px solid #ddd; }
+        .section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+        .section h2 { margin-top: 0; }
+        label { margin-right: 8px; }
+        select, input[type=text] { margin-right: 8px; }
+        button { margin-right: 8px; }
     </style>
 </head>
 <body>
-    <h1>API Test</h1>
+    <h1>txtバージョン管理サービスAPIテスト</h1>
 
-    <h2>Add / Update Data</h2>
-    <form id="editForm" onsubmit="event.preventDefault();">
-        <label for="editTitle">タイトル:</label>
-        <input type="text" id="editTitle" name="title" required onblur="fetchContentByTitle()">
-        <label for="editContent">内容:</label>
-        <textarea id="editContent" name="content" required rows="5" style="width:100%;resize:vertical;"></textarea>
-        <button type="button" onclick="addData()">追加</button>
-        <button type="button" onclick="updateData()">更新</button>
-    </form>
+    <div class="section">
+        <h2>ユーザー操作</h2>
+        <form id="userForm" onsubmit="event.preventDefault();">
+            <label for="username">ユーザー名:</label>
+            <input type="text" id="username" required>
+            <button type="button" onclick="createUser()">ユーザー作成</button>
+        </form>
+        <button onclick="getUsers()">ユーザー一覧取得</button>
+        <select id="userList" style="min-width:120px;"></select>
+        <button onclick="deleteUser()">ユーザー削除</button>
+    </div>
 
-    <h2>Get Data</h2>
-    <button type="button" onclick="getData()">Get All Data</button>
+    <div class="section">
+        <h2>リポジトリ操作</h2>
+        <form id="repoForm" onsubmit="event.preventDefault();">
+            <label for="repoName">リポジトリ名:</label>
+            <input type="text" id="repoName">
+            <label for="repoOwner">所有者(ユーザー):</label>
+            <select id="repoOwner"></select>
+            <button type="button" onclick="createRepository()">リポジトリ作成</button>
+        </form>
+        <label for="repoOwnerList">ユーザーで絞り込み:</label>
+        <select id="repoOwnerList"></select>
+        <button onclick="getRepositories()">リポジトリ一覧取得</button>
+        <select id="repoList" style="min-width:120px;"></select>
+        <button onclick="deleteRepository()">リポジトリ削除</button>
+    </div>
+    <div class="section">
+        <h2>ブランチ操作</h2>
+        <form id="branchForm" onsubmit="event.preventDefault();">
+            <label for="branchName">ブランチ名:</label>
+            <input type="text" id="branchName">
+            <label for="branchRepo">リポジトリ:</label>
+            <select id="branchRepo"></select>
+            <button type="button" onclick="createBranch()">ブランチ作成</button>
+        </form>
+        <label for="branchRepoList">リポジトリで絞り込み:</label>
+        <select id="branchRepoList"></select>
+        <button onclick="getBranches()">ブランチ一覧取得</button>
+        <select id="branchList" style="min-width:120px;"></select>
+        <button onclick="deleteBranch()">ブランチ削除</button>
+    </div>
+    <div class="section">
+        <h2>コミット操作</h2>
+        <form id="commitForm" onsubmit="event.preventDefault();">
+            <label for="commitBranch">ブランチ:</label>
+            <select id="commitBranch"></select>
+            <label for="commitMessage">メッセージ:</label>
+            <input type="text" id="commitMessage">
+            <label for="commitAuthor">ユーザー:</label>
+            <select id="commitAuthor"></select>
+            <button type="button" onclick="createCommit()">コミット作成</button>
+        </form>
+        <label for="commitBranchList">ブランチで絞り込み:</label>
+        <select id="commitBranchList"></select>
+        <button onclick="getCommits()">コミット一覧取得</button>
+        <select id="commitList" style="min-width:120px;"></select>
+        <button onclick="deleteCommit()">コミット削除</button>
+    </div>
+    <div class="section">
+        <h2>ファイル表示・マージ・グラフ</h2>
+        <label for="fileRepo">リポジトリ:</label>
+        <select id="fileRepo"></select>
+        <button onclick="getFiles()">ファイル表示</button>
+        <label for="mergeBranch">マージ元ブランチ:</label>
+        <select id="mergeBranch"></select>
+        <label for="mergeTargetBranch">マージ先ブランチ:</label>
+        <select id="mergeTargetBranch"></select>
+        <button onclick="mergeBranchApi()">マージ</button>
+        <label for="graphRepo">リポジトリ:</label>
+        <select id="graphRepo"></select>
+        <button onclick="getGraph()">グラフ表示</button>
+    </div>
 
-    <h2>Delete Data</h2>
-    <form id="deleteForm" onsubmit="event.preventDefault();">
-        <label for="deleteTitle">タイトル:</label>
-        <input type="text" id="deleteTitle" name="title" required>
-        <button type="button" onclick="deleteData()">Delete</button>
-    </form>
-
-    <h2>Response</h2>
+    <h2>APIレスポンス</h2>
     <pre id="response"></pre>
-    <h2>Diff</h2>
-    <pre id="diff"></pre>
 
     <script>
-        const apiUrl = 'http://localhost:8080/api';
+    const apiUserUrl = 'http://localhost:8080/api/user';
+    const apiRepoUrl = 'http://localhost:8080/api/repository';
+    const apiBranchUrl = 'http://localhost:8080/api/branch';
+    const apiCommitUrl = 'http://localhost:8080/api/commit';
+    const apiFileUrl = 'http://localhost:8080/api/file';
+    const apiMergeUrl = 'http://localhost:8080/api/merge';
+    const apiGraphUrl = 'http://localhost:8080/api/graph';
 
-        async function addData() {
-            const title = document.getElementById('editTitle').value;
-            const content = document.getElementById('editContent').value;
-            const responseElement = document.getElementById('response');
-            const diffElement = document.getElementById('diff');
+    // --- ユーザー ---
+    async function createUser() {
+        const username = document.getElementById('username').value;
+        const responseElement = document.getElementById('response');
+        if (!username) return;
+        try {
+            const res = await fetch(apiUserUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            getUsers();
+        } catch (e) {
+            responseElement.textContent = 'Error: ' + e.message;
+        }
+    }
 
-            try {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content })
+    async function getUsers() {
+        const responseElement = document.getElementById('response');
+        try {
+            const res = await fetch(apiUserUrl, { method: 'GET' });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            // セレクトボックス更新
+            const userList = document.getElementById('userList');
+            const repoOwner = document.getElementById('repoOwner');
+            const repoOwnerList = document.getElementById('repoOwnerList');
+            userList.innerHTML = '';
+            repoOwner.innerHTML = '';
+            repoOwnerList.innerHTML = '';
+            if (data.users) {
+                data.users.forEach(u => {
+                    const opt1 = document.createElement('option');
+                    opt1.value = u.id;
+                    opt1.textContent = `${u.id}: ${u.username}`;
+                    userList.appendChild(opt1);
+                    const opt2 = document.createElement('option');
+                    opt2.value = u.id;
+                    opt2.textContent = `${u.id}: ${u.username}`;
+                    repoOwner.appendChild(opt2);
+                    const opt3 = document.createElement('option');
+                    opt3.value = u.id;
+                    opt3.textContent = `${u.id}: ${u.username}`;
+                    repoOwnerList.appendChild(opt3);
                 });
-                const data = await response.json();
-                responseElement.textContent = JSON.stringify(data, null, 2);
-                diffElement.textContent = '';
-                document.getElementById('editTitle').value = '';
-                document.getElementById('editContent').value = '';
-            } catch (error) {
-                responseElement.textContent = 'Error: ' + error.message;
-                diffElement.textContent = '';
             }
+        } catch (e) {
+            responseElement.textContent = 'Error: ' + e.message;
         }
+    }
 
-        async function getData() {
-            const responseElement = document.getElementById('response');
+    async function deleteUser() {
+        const userList = document.getElementById('userList');
+        const id = userList.value;
+        const responseElement = document.getElementById('response');
+        if (!id) return;
+        try {
+            const res = await fetch(apiUserUrl, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            getUsers();
+        } catch (e) {
+            responseElement.textContent = 'Error: ' + e.message;
+        }
+    }
 
-            try {
-                const response = await fetch(apiUrl, {
-                    method: 'GET'
+    // --- リポジトリ ---
+    async function createRepository() {
+        const name = document.getElementById('repoName').value;
+        const owner_id = document.getElementById('repoOwner').value;
+        const responseElement = document.getElementById('response');
+        if (!name || !owner_id) return;
+        try {
+            const res = await fetch(apiRepoUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, owner_id })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            getRepositories();
+        } catch (e) {
+            responseElement.textContent = 'Error: ' + e.message;
+        }
+    }
+
+    async function getRepositories() {
+        const owner_id = document.getElementById('repoOwnerList').value;
+        const responseElement = document.getElementById('response');
+        let url = apiRepoUrl;
+        if (owner_id) url += `?owner_id=${owner_id}`;
+        try {
+            const res = await fetch(url, { method: 'GET' });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            // セレクトボックス更新
+            const repoList = document.getElementById('repoList');
+            repoList.innerHTML = '';
+            if (data.repositories) {
+                data.repositories.forEach(r => {
+                    const opt = document.createElement('option');
+                    opt.value = r.id;
+                    opt.textContent = `${r.id}: ${r.name} (owner:${r.owner_id})`;
+                    repoList.appendChild(opt);
                 });
-
-                const data = await response.json();
-                responseElement.textContent = JSON.stringify(data, null, 2);
-            } catch (error) {
-                responseElement.textContent = 'Error: ' + error.message;
             }
+        } catch (e) {
+            responseElement.textContent = 'Error: ' + e.message;
         }
+    }
 
-        async function deleteData() {
-            const title = document.getElementById('deleteTitle').value;
-            const responseElement = document.getElementById('response');
+    async function deleteRepository() {
+        const repoList = document.getElementById('repoList');
+        const id = repoList.value;
+        const responseElement = document.getElementById('response');
+        if (!id) return;
+        try {
+            const res = await fetch(apiRepoUrl, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            getRepositories();
+        } catch (e) {
+            responseElement.textContent = 'Error: ' + e.message;
+        }
+    }
 
-            try {
-                const response = await fetch(apiUrl, {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title })
+    // --- ブランチ ---
+    async function createBranch() {
+        const name = document.getElementById('branchName').value;
+        const repository_id = document.getElementById('branchRepo').value;
+        const responseElement = document.getElementById('response');
+        if (!name || !repository_id) return;
+        try {
+            const res = await fetch(apiBranchUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, repository_id })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            getBranches();
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+    async function getBranches() {
+        const repository_id = document.getElementById('branchRepoList').value;
+        const responseElement = document.getElementById('response');
+        let url = apiBranchUrl;
+        if (repository_id) url += `?repository_id=${repository_id}`;
+        try {
+            const res = await fetch(url, { method: 'GET' });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            const branchList = document.getElementById('branchList');
+            branchList.innerHTML = '';
+            if (data.branches) {
+                data.branches.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = `${b.id}: ${b.name} (repo:${b.repository_id})`;
+                    branchList.appendChild(opt);
                 });
-
-                const data = await response.json();
-                responseElement.textContent = JSON.stringify(data, null, 2);
-            } catch (error) {
-                responseElement.textContent = 'Error: ' + error.message;
             }
-        }
-
-        async function updateData() {
-            const title = document.getElementById('editTitle').value;
-            const content = document.getElementById('editContent').value;
-            const responseElement = document.getElementById('response');
-            const diffElement = document.getElementById('diff');
-
-            try {
-                const response = await fetch(apiUrl, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content })
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+    async function deleteBranch() {
+        const branchList = document.getElementById('branchList');
+        const id = branchList.value;
+        const responseElement = document.getElementById('response');
+        if (!id) return;
+        try {
+            const res = await fetch(apiBranchUrl, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            getBranches();
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+    // --- コミット ---
+    async function createCommit() {
+        const branch_id = document.getElementById('commitBranch').value;
+        const message = document.getElementById('commitMessage').value;
+        const author_id = document.getElementById('commitAuthor').value;
+        const responseElement = document.getElementById('response');
+        if (!branch_id || !message || !author_id) return;
+        try {
+            const res = await fetch(apiCommitUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ branch_id, message, author_id })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            getCommits();
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+    async function getCommits() {
+        const branch_id = document.getElementById('commitBranchList').value;
+        const responseElement = document.getElementById('response');
+        let url = apiCommitUrl;
+        if (branch_id) url += `?branch_id=${branch_id}`;
+        try {
+            const res = await fetch(url, { method: 'GET' });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            const commitList = document.getElementById('commitList');
+            commitList.innerHTML = '';
+            if (data.commits) {
+                data.commits.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = `${c.id}: ${c.message} (branch:${c.branch_id})`;
+                    commitList.appendChild(opt);
                 });
-                const data = await response.json();
-                responseElement.textContent = JSON.stringify(data, null, 2);
-                if (data.oldContent !== undefined && data.newContent !== undefined) {
-                    // '\n' を本当の改行に変換してから表示
-                    const oldText = typeof data.oldContent === 'string' ? data.oldContent.replace(/\\n/g, '\n') : '';
-                    const newText = typeof data.newContent === 'string' ? data.newContent.replace(/\\n/g, '\n') : '';
-                    diffElement.innerHTML = renderSideBySide(oldText, newText);
-                } else {
-                    diffElement.textContent = '';
-                }
-                document.getElementById('editTitle').value = '';
-                document.getElementById('editContent').value = '';
-            } catch (error) {
-                responseElement.textContent = 'Error: ' + error.message;
-                diffElement.textContent = '';
             }
-        }
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+    async function deleteCommit() {
+        const commitList = document.getElementById('commitList');
+        const id = commitList.value;
+        const responseElement = document.getElementById('response');
+        if (!id) return;
+        try {
+            const res = await fetch(apiCommitUrl, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+            getCommits();
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+    // --- ファイル ---
+    async function getFiles() {
+        const repository_id = document.getElementById('fileRepo').value;
+        const responseElement = document.getElementById('response');
+        if (!repository_id) return;
+        let url = apiFileUrl + `?repository_id=${repository_id}`;
+        try {
+            const res = await fetch(url, { method: 'GET' });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+    // --- マージ ---
+    async function mergeBranchApi() {
+        const branch_id = document.getElementById('mergeBranch').value;
+        const target_branch_id = document.getElementById('mergeTargetBranch').value;
+        const responseElement = document.getElementById('response');
+        if (!branch_id || !target_branch_id) return;
+        try {
+            const res = await fetch(apiMergeUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ branch_id, target_branch_id })
+            });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+    // --- グラフ ---
+    async function getGraph() {
+        const repository_id = document.getElementById('graphRepo').value;
+        const responseElement = document.getElementById('response');
+        if (!repository_id) return;
+        let url = apiGraphUrl + `?repository_id=${repository_id}`;
+        try {
+            const res = await fetch(url, { method: 'GET' });
+            const data = await res.json();
+            responseElement.textContent = JSON.stringify(data, null, 2);
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
 
-        async function fetchContentByTitle() {
-            const title = document.getElementById('editTitle').value;
-            if (!title) return;
-            try {
-                const response = await fetch(apiUrl, { method: 'GET' });
-                const data = await response.json();
-                if (data.data && Array.isArray(data.data)) {
-                    const found = data.data.find(item => item.title === title);
-                    if (found) {
-                        document.getElementById('editContent').value = found.content;
-                    } else {
-                        document.getElementById('editContent').value = '';
-                    }
-                }
-            } catch (e) {
-                // エラー時は内容欄を空に
-                document.getElementById('editContent').value = '';
+    // --- セレクトボックス連動 ---
+    async function updateRepoSelects() {
+        // リポジトリ一覧取得し、各selectを更新
+        let url = apiRepoUrl;
+        try {
+            const res = await fetch(url, { method: 'GET' });
+            const data = await res.json();
+            const repoSelects = [
+                document.getElementById('branchRepo'),
+                document.getElementById('branchRepoList'),
+                document.getElementById('fileRepo'),
+                document.getElementById('graphRepo')
+            ];
+            repoSelects.forEach(sel => { sel.innerHTML = ''; });
+            if (data.repositories) {
+                data.repositories.forEach(r => {
+                    repoSelects.forEach(sel => {
+                        const opt = document.createElement('option');
+                        opt.value = r.id;
+                        opt.textContent = `${r.id}: ${r.name}`;
+                        sel.appendChild(opt.cloneNode(true));
+                    });
+                });
             }
-        }
-
-        function renderSideBySide(oldText, newText) {
-            // エスケープと改行処理
-            function escapeHtml(text) {
-                return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        } catch (e) {}
+    }
+    async function updateBranchSelects() {
+        // ブランチ一覧取得し、各selectを更新
+        let url = apiBranchUrl;
+        try {
+            const res = await fetch(url, { method: 'GET' });
+            const data = await res.json();
+            const branchSelects = [
+                document.getElementById('commitBranch'),
+                document.getElementById('commitBranchList'),
+                document.getElementById('mergeBranch'),
+                document.getElementById('mergeTargetBranch')
+            ];
+            branchSelects.forEach(sel => { sel.innerHTML = ''; });
+            if (data.branches) {
+                data.branches.forEach(b => {
+                    branchSelects.forEach(sel => {
+                        const opt = document.createElement('option');
+                        opt.value = b.id;
+                        opt.textContent = `${b.id}: ${b.name}`;
+                        sel.appendChild(opt.cloneNode(true));
+                    });
+                });
             }
-            const oldLines = (oldText || '').split(/\r?\n/);
-            const newLines = (newText || '').split(/\r?\n/);
-            const maxLines = Math.max(oldLines.length, newLines.length);
-            let html = '<div style="display:flex;gap:16px;"><div style="flex:1;"><b>変更前</b><hr>'; // left
-            html += oldLines.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
-            html += '</div><div style="flex:1;"><b>変更後</b><hr>';
-            html += newLines.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
-            html += '</div></div>';
-            return html;
-        }
+        } catch (e) {}
+    }
+    async function updateUserSelects() {
+        // ユーザー一覧取得し、コミット用selectを更新
+        try {
+            const res = await fetch(apiUserUrl, { method: 'GET' });
+            const data = await res.json();
+            const commitAuthor = document.getElementById('commitAuthor');
+            commitAuthor.innerHTML = '';
+            if (data.users) {
+                data.users.forEach(u => {
+                    const opt = document.createElement('option');
+                    opt.value = u.id;
+                    opt.textContent = `${u.id}: ${u.username}`;
+                    commitAuthor.appendChild(opt);
+                });
+            }
+        } catch (e) {}
+    }
+    // --- 連動 ---
+    async function updateAllSelects() {
+        await updateRepoSelects();
+        await updateBranchSelects();
+        await updateUserSelects();
+    }
+    // 各操作後にセレクトボックスを更新
+    async function afterDataChange() {
+        await getUsers();
+        await getRepositories();
+        await getBranches();
+        await getCommits();
+        await updateAllSelects();
+    }
+    // 主要操作の後にafterDataChangeを呼ぶように既存関数を修正してください
+    // 初回ロード時
+    window.onload = afterDataChange;
     </script>
 </body>
 </html>
