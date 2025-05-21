@@ -380,11 +380,8 @@
         const responseElement = document.getElementById('response');
         if (!branch_id) return;
         try {
-            const res = await fetch(apiFileUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch_id })
-            });
+            const url = apiFileUrl + `?branch_id=${branch_id}`;
+            const res = await fetch(url, { method: 'GET' });
             const data = await res.json();
             // レスポンスを整形表示
             if (data.files && data.files.length > 0) {

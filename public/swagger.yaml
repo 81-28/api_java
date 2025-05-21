@@ -267,18 +267,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/Success'
   /file:
-    post:
+    get:
       tags: [file]
       summary: ファイル表示
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                branch_id:
-                  type: integer
+      parameters:
+        - in: query
+          name: branch_id
+          schema:
+            type: integer
+          required: true
       responses:
         '200':
           description: ファイル一覧

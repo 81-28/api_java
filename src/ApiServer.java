@@ -222,9 +222,14 @@ public class ApiServer {
             addCorsHeaders(exchange);
             String method = exchange.getRequestMethod();
             if ("OPTIONS".equals(method)) { exchange.sendResponseHeaders(204, -1); return; }
-            if ("POST".equals(method)) {
-                String requestBody = readRequestBody(exchange);
-                String branchId = parseFieldFromJson(requestBody, "branch_id");
+            if ("GET".equals(method)) {
+                String query = exchange.getRequestURI().getQuery();
+                String branchId = null;
+                if (query != null && query.contains("branch_id=")) {
+                    for (String param : query.split("&")) {
+                        if (param.startsWith("branch_id=")) branchId = param.substring("branch_id=".length());
+                    }
+                }
                 // ブランチのhead_commit_id取得
                 Integer headCommitId = null;
                 String url = "jdbc:sqlite:database/database.db";
