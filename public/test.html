@@ -579,7 +579,7 @@
         const repoId = document.getElementById('repoList').value;
         branchSelect.innerHTML = '';
         if (!repoId) return;
-        fetch(`/api/branch?repository_id=${repoId}`)
+        fetch(apiBranchUrl + `?repository_id=${repoId}`)
             .then(res => res.json())
             .then(data => {
                 if (!data.branches) return;
@@ -598,7 +598,7 @@
         const repoId = document.getElementById('repoList').value;
         branchListSelect.innerHTML = '';
         if (!repoId) return;
-        fetch(`/api/branch?repository_id=${repoId}`)
+        fetch(apiBranchUrl + `?repository_id=${repoId}`)
             .then(res => res.json())
             .then(data => {
                 if (!data.branches) return;
@@ -614,20 +614,20 @@
     function onCommitBranchChange() {
         const branchId = document.getElementById('commitBranch').value;
         if (!branchId) return;
-        fetch(`/api/commit?branch_id=${branchId}`)
+        fetch(apiCommitUrl + `?branch_id=${branchId}`)
             .then(res => res.json())
-            .then(commits => {
-                if (commits.length === 0) {
+            .then(commitsData => {
+                if (!commitsData.commits || commitsData.commits.length === 0) {
                     document.getElementById('commitContent').value = '';
                     return;
                 }
-                const latestCommit = commits[commits.length - 1];
+                const latestCommit = commitsData.commits[commitsData.commits.length - 1];
                 // 最新コミットの内容取得
-                fetch(`/api/file?commit_id=${latestCommit.id}`)
+                fetch(apiFileUrl + `?commit_id=${latestCommit.id}`)
                     .then(res => res.json())
-                    .then(files => {
+                    .then(filesData => {
                         // 仕様上、1ファイルのみ想定（複数なら先頭）
-                        document.getElementById('commitContent').value = files.length > 0 ? files[0].content : '';
+                        document.getElementById('commitContent').value = (filesData.files && filesData.files.length > 0) ? filesData.files[0].text : '';
                     });
             });
     }
