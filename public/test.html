@@ -427,18 +427,72 @@
     };
     // --- マージ ---
     async function mergeBranchApi() {
-        const branch_id = document.getElementById('mergeBranch').value;
-        const target_branch_id = document.getElementById('mergeTargetBranch').value;
+        const branch_id_1 = document.getElementById('mergeBranch').value;
+        const branch_id_2 = document.getElementById('mergeTargetBranch').value;
         const responseElement = document.getElementById('response');
-        if (!branch_id || !target_branch_id) return;
+        if (!branch_id_1 || !branch_id_2) return;
         try {
             const res = await fetch(apiMergeUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch_id, target_branch_id })
+                body: JSON.stringify({ branch_id_1, branch_id_2 })
             });
             const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
+            if (data.success) {
+                responseElement.textContent = JSON.stringify(data, null, 2);
+                await afterDataChange();
+            } else {
+                // マージ失敗時: 2テキスト比較UIを表示
+                showMergeConflictUI(data, branch_id_1, branch_id_2);
+            }
+        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+    }
+
+    // マージ失敗時のUI
+    function showMergeConflictUI(data, branch_id_1, branch_id_2) {
+        const responseElement = document.getElementById('response');
+        // UI生成
+        let html = `<div style='display:flex;gap:16px;'>` +
+            `<div style='flex:1;'><b>ブランチ1</b><textarea id='mergeText1' style='width:100%;height:120px;'>${data.text_1 || ''}</textarea></div>` +
+            `<div style='flex:1;'><b>ブランチ2</b><textarea id='mergeText2' style='width:100%;height:120px;'>${data.text_2 || ''}</textarea></div>` +
+            `</div>` +
+            `<div style='margin-top:8px;'>` +
+            `<button onclick='window.applyForceMerge(1)'>ブランチ1を採用</button>` +
+            `<button onclick='window.applyForceMerge(2)'>ブランチ2を採用</button>` +
+            `<button onclick='window.editForceMerge()'>自分で編集</button>` +
+            `</div>` +
+            `<div id='editMergeArea' style='margin-top:8px;display:none;'><textarea id='editMergeText' style='width:100%;height:120px;'></textarea><br><button onclick='window.submitEditForceMerge()'>この内容で強制マージ</button></div>`;
+        responseElement.innerHTML = html;
+        // グローバル関数でボタンから呼べるように
+        window.applyForceMerge = async function(which) {
+            let text = (which === 1) ? document.getElementById('mergeText1').value : document.getElementById('mergeText2').value;
+            await doForceMerge(branch_id_1, branch_id_2, text);
+        };
+        window.editForceMerge = function() {
+            document.getElementById('editMergeArea').style.display = '';
+            document.getElementById('editMergeText').value = document.getElementById('mergeText1').value;
+        };
+        window.submitEditForceMerge = async function() {
+            let text = document.getElementById('editMergeText').value;
+            await doForceMerge(branch_id_1, branch_id_2, text);
+        };
+    }
+    // 強制マージAPI呼び出し
+    async function doForceMerge(branch_id_1, branch_id_2, text) {
+        const responseElement = document.getElementById('response');
+        try {
+            const res = await fetch('http://localhost:8080/api/force-merge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ branch_id_1, branch_id_2, text })
+            });
+            const data = await res.json();
+            if (data.success) {
+                responseElement.textContent = '強制マージ成功\n' + JSON.stringify(data, null, 2);
+                await afterDataChange();
+            } else {
+                responseElement.textContent = '強制マージ失敗\n' + JSON.stringify(data, null, 2);
+            }
         } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
     }
     // --- グラフ ---

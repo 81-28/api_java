@@ -306,9 +306,9 @@ paths:
             schema:
               type: object
               properties:
-                branch_id:
+                branch_id_1:
                   type: integer
-                target_branch_id:
+                branch_id_2:
                   type: integer
       responses:
         '200':
@@ -318,10 +318,43 @@ paths:
               schema:
                 type: object
                 properties:
-                  conflict:
+                  success:
                     type: boolean
-                  message:
+                  branch_id_1:
+                    type: integer
+                  file_id_1:
                     type: string
+                  branch_id_2:
+                    type: integer
+                  file_id_2:
+                    type: string
+  /force-merge:
+    post:
+      tags: [merge]
+      summary: 強制マージ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch_id_1:
+                  type: integer
+                branch_id_2:
+                  type: integer
+                text:
+                  type: string
+      responses:
+        '200':
+          description: 強制マージ結果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
   /graph:
     get:
       tags: [graph]

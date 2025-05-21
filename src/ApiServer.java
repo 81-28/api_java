@@ -29,6 +29,7 @@ public class ApiServer {
         server.createContext("/api/commit", new CommitHandler());
         server.createContext("/api/file", new FileHandler());
         server.createContext("/api/merge", new MergeHandler());
+        server.createContext("/api/force-merge", new ForceMergeHandler()); // 追加
         server.createContext("/api/graph", new GraphHandler());
         server.setExecutor(null);
         server.start();
@@ -290,23 +291,47 @@ public class ApiServer {
             if ("OPTIONS".equals(method)) { exchange.sendResponseHeaders(204, -1); return; }
             if ("POST".equals(method)) {
                 String requestBody = readRequestBody(exchange);
-                String branchId = parseFieldFromJson(requestBody, "branch_id");
-                String targetBranchId = parseFieldFromJson(requestBody, "target_branch_id");
-                Map<String, Object> result = mergeBranches(branchId, targetBranchId);
+                // 新仕様: branch_id_1, branch_id_2
+                String branchId1 = parseFieldFromJson(requestBody, "branch_id_1");
+                String branchId2 = parseFieldFromJson(requestBody, "branch_id_2");
+                Map<String, Object> result = mergeBranchesStrict(branchId1, branchId2);
                 StringBuilder json = new StringBuilder("{");
                 int i = 0;
                 for (String k : result.keySet()) {
                     Object v = result.get(k);
                     if (v instanceof String) {
-                        json.append(String.format("\"%s\":\"%s\"", k, v));
-                    } else {
+                        json.append(String.format("\"%s\":\"%s\"", k, v.toString().replace("\"", "\\\"")));
+                    } else if (v instanceof Boolean) {
                         json.append(String.format("\"%s\":%s", k, v.toString()));
+                    } else {
+                        json.append(String.format("\"%s\":%s", k, v));
                     }
                     if (i < result.size() - 1) json.append(",");
                     i++;
                 }
                 json.append("}");
                 sendResponse(exchange, 200, json.toString());
+            } else {
+                exchange.sendResponseHeaders(405, -1);
+            }
+        }
+    }
+
+    // --- 強制マージAPI ---
+    static class ForceMergeHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            addCorsHeaders(exchange);
+            String method = exchange.getRequestMethod();
+            if ("OPTIONS".equals(method)) { exchange.sendResponseHeaders(204, -1); return; }
+            if ("POST".equals(method)) {
+                String requestBody = readRequestBody(exchange);
+                String branchId1 = parseFieldFromJson(requestBody, "branch_id_1");
+                String branchId2 = parseFieldFromJson(requestBody, "branch_id_2");
+                String text = parseFieldFromJson(requestBody, "text");
+                boolean success = forceMerge(branchId1, branchId2, text);
+                String json = String.format("{\"success\":%s}", success ? "true" : "false");
+                sendResponse(exchange, 200, json);
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
@@ -863,5 +888,164 @@ public class ApiServer {
         }
         // データベース初期化（サーバ起動時に必ず実行）
         initializeDatabase();
+    }
+
+    // 2ブランチのファイル内容が完全一致ならマージ、違えば両方の内容返す
+    private static Map<String, Object> mergeBranchesStrict(String branchId1, String branchId2) {
+        Map<String, Object> result = new HashMap<>();
+        String url = "jdbc:sqlite:database/database.db";
+        Connection conn = null;
+        try {
+            conn = DriverManager.getConnection(url);
+            conn.setAutoCommit(false);
+            // 各ブランチのhead_commit_id取得
+            Integer head1 = null, head2 = null;
+            String sql = "SELECT head_commit_id FROM branch WHERE id = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, Integer.parseInt(branchId1));
+                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) head1 = rs.getInt("head_commit_id"); }
+                pstmt.setInt(1, Integer.parseInt(branchId2));
+                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) head2 = rs.getInt("head_commit_id"); }
+            }
+            if (head1 == null || head2 == null || head1 == 0 || head2 == 0) {
+                result.put("success", false);
+                result.put("message", "No HEAD commit");
+                return result;
+            }
+            // 各HEADコミットのファイル内容取得
+            String getContentSql = "SELECT id, content FROM file WHERE commit_id = ? ORDER BY id LIMIT 1";
+            int fileId1 = -1, fileId2 = -1;
+            String content1 = "", content2 = "";
+            try (PreparedStatement pstmt = conn.prepareStatement(getContentSql)) {
+                pstmt.setInt(1, head1);
+                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) { fileId1 = rs.getInt("id"); content1 = rs.getString("content"); } }
+                pstmt.setInt(1, head2);
+                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) { fileId2 = rs.getInt("id"); content2 = rs.getString("content"); } }
+            }
+            if (content1 == null) content1 = "";
+            if (content2 == null) content2 = "";
+            if (content1.equals(content2)) {
+                // 新しいマージコミット作成（親2つ）
+                // repository_id取得
+                int repositoryId = -1;
+                String repoSql = "SELECT repository_id FROM branch WHERE id = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(repoSql)) {
+                    pstmt.setInt(1, Integer.parseInt(branchId1));
+                    try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) repositoryId = rs.getInt("repository_id"); }
+                }
+                if (repositoryId == -1) { result.put("success", false); result.put("message", "No repository"); return result; }
+                // コミット作成
+                String commitSql = "INSERT INTO git_commit(repository_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at) VALUES(?, 1, ?, ?, ?, ?, datetime('now'))";
+                int newCommitId = -1;
+                try (PreparedStatement pstmt = conn.prepareStatement(commitSql, PreparedStatement.RETURN_GENERATED_KEYS)) {
+                    pstmt.setInt(1, repositoryId);
+                    pstmt.setString(2, "Merge");
+                    pstmt.setInt(3, head1);
+                    pstmt.setInt(4, head2);
+                    pstmt.executeUpdate();
+                    try (ResultSet rs = pstmt.getGeneratedKeys()) { if (rs.next()) newCommitId = rs.getInt(1); }
+                }
+                if (newCommitId == -1) { conn.rollback(); result.put("success", false); result.put("message", "Commit failed"); return result; }
+                // ファイル作成
+                String fileSql = "INSERT INTO file(commit_id, filename, content) VALUES(?, 'main.txt', ?)";
+                int newFileId = -1;
+                try (PreparedStatement pstmt = conn.prepareStatement(fileSql, PreparedStatement.RETURN_GENERATED_KEYS)) {
+                    pstmt.setInt(1, newCommitId);
+                    pstmt.setString(2, content1);
+                    pstmt.executeUpdate();
+                    try (ResultSet rs = pstmt.getGeneratedKeys()) { if (rs.next()) newFileId = rs.getInt(1); }
+                }
+                // 両ブランチのhead_commit_id更新
+                String updateSql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
+                    pstmt.setInt(1, newCommitId);
+                    pstmt.setInt(2, Integer.parseInt(branchId1));
+                    pstmt.executeUpdate();
+                    pstmt.setInt(1, newCommitId);
+                    pstmt.setInt(2, Integer.parseInt(branchId2));
+                    pstmt.executeUpdate();
+                }
+                conn.commit();
+                result.put("success", true);
+                result.put("branch_id_1", Integer.parseInt(branchId1));
+                result.put("file_id_1", String.valueOf(fileId1));
+                result.put("branch_id_2", Integer.parseInt(branchId2));
+                result.put("file_id_2", String.valueOf(fileId2));
+                return result;
+            } else {
+                // 不一致: 失敗＋両方の内容返す
+                result.put("success", false);
+                result.put("branch_id_1", Integer.parseInt(branchId1));
+                result.put("file_id_1", String.valueOf(fileId1));
+                result.put("text_1", content1);
+                result.put("branch_id_2", Integer.parseInt(branchId2));
+                result.put("file_id_2", String.valueOf(fileId2));
+                result.put("text_2", content2);
+                return result;
+            }
+        } catch (SQLException | NumberFormatException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ignore) {}
+            result.put("success", false);
+            result.put("message", "Merge error: " + e.getMessage());
+            return result;
+        } finally {
+            if (conn != null) try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ignore) {}
+        }
+    }
+
+    // 強制マージ: 指定テキストで新コミット作成、両ブランチhead更新
+    private static boolean forceMerge(String branchId1, String branchId2, String text) {
+        String url = "jdbc:sqlite:database/database.db";
+        Connection conn = null;
+        try {
+            conn = DriverManager.getConnection(url);
+            conn.setAutoCommit(false);
+            // 各ブランチのhead_commit_id, repository_id取得
+            Integer head1 = null, head2 = null, repositoryId = null;
+            String sql = "SELECT head_commit_id, repository_id FROM branch WHERE id = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, Integer.parseInt(branchId1));
+                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) { head1 = rs.getInt("head_commit_id"); repositoryId = rs.getInt("repository_id"); } }
+                pstmt.setInt(1, Integer.parseInt(branchId2));
+                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) head2 = rs.getInt("head_commit_id"); }
+            }
+            if (head1 == null || head2 == null || repositoryId == null) return false;
+            // コミット作成
+            String commitSql = "INSERT INTO git_commit(repository_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at) VALUES(?, 1, ?, ?, ?, datetime('now'))";
+            int newCommitId = -1;
+            try (PreparedStatement pstmt = conn.prepareStatement(commitSql, PreparedStatement.RETURN_GENERATED_KEYS)) {
+                pstmt.setInt(1, repositoryId);
+                pstmt.setString(2, "Force Merge");
+                pstmt.setInt(3, head1);
+                pstmt.setInt(4, head2);
+                pstmt.executeUpdate();
+                try (ResultSet rs = pstmt.getGeneratedKeys()) { if (rs.next()) newCommitId = rs.getInt(1); }
+            }
+            if (newCommitId == -1) { conn.rollback(); return false; }
+            // ファイル作成
+            String fileSql = "INSERT INTO file(commit_id, filename, content) VALUES(?, 'main.txt', ?)";
+            try (PreparedStatement pstmt = conn.prepareStatement(fileSql)) {
+                pstmt.setInt(1, newCommitId);
+                pstmt.setString(2, text);
+                pstmt.executeUpdate();
+            }
+            // 両ブランチのhead_commit_id更新
+            String updateSql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
+                pstmt.setInt(1, newCommitId);
+                pstmt.setInt(2, Integer.parseInt(branchId1));
+                pstmt.executeUpdate();
+                pstmt.setInt(1, newCommitId);
+                pstmt.setInt(2, Integer.parseInt(branchId2));
+                pstmt.executeUpdate();
+            }
+            conn.commit();
+            return true;
+        } catch (SQLException | NumberFormatException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ignore) {}
+            return false;
+        } finally {
+            if (conn != null) try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ignore) {}
+        }
     }
 }
