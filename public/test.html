@@ -96,7 +96,9 @@
     <div class="section">
         <h2>ファイル表示・マージ・グラフ</h2>
         <label for="fileRepo">リポジトリ:</label>
-        <select id="fileRepo"></select>
+        <select id="fileRepo" onchange="updateFileBranchSelect()"></select>
+        <label for="fileBranch">ブランチ:</label>
+        <select id="fileBranch"></select>
         <button onclick="getFiles()">ファイル表示</button>
         <label for="mergeBranch">マージ元ブランチ:</label>
         <select id="mergeBranch"></select>
@@ -374,16 +376,58 @@
     }
     // --- ファイル ---
     async function getFiles() {
-        const repository_id = document.getElementById('fileRepo').value;
+        const branch_id = document.getElementById('fileBranch').value;
         const responseElement = document.getElementById('response');
-        if (!repository_id) return;
-        let url = apiFileUrl + `?repository_id=${repository_id}`;
+        if (!branch_id) return;
+        try {
+            const res = await fetch(apiFileUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ branch_id })
+            });
+            const data = await res.json();
+            // レスポンスを整形表示
+            if (data.files && data.files.length > 0) {
+                let text = 'ファイル一覧\n';
+                data.files.forEach(f => {
+                    text += `commit_id: ${f.commit_id}\nfile_id: ${f.file_id}\ntext:\n${f.text}\n---\n`;
+                });
+                responseElement.textContent = text;
+            } else {
+                responseElement.textContent = 'ファイルがありません';
+            }
+        } catch (e) {
+            responseElement.textContent = 'Error: ' + e.message;
+        }
+    }
+
+    // ファイル表示用ブランチセレクトの更新
+    async function updateFileBranchSelect() {
+        const repoId = document.getElementById('fileRepo').value;
+        const branchSel = document.getElementById('fileBranch');
+        branchSel.innerHTML = '';
+        if (!repoId) return;
+        let url = apiBranchUrl + `?repository_id=${repoId}`;
         try {
             const res = await fetch(url, { method: 'GET' });
             const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
+            if (data.branches) {
+                data.branches.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = `${b.id}: ${b.name}`;
+                    branchSel.appendChild(opt);
+                });
+            }
+        } catch (e) {}
     }
+
+    // afterDataChange時にもfileBranchを更新
+    const _oldAfterDataChange2 = afterDataChange;
+    afterDataChange = async function() {
+        await _oldAfterDataChange2();
+        await updateFileBranchSelect();
+    };
     // --- マージ ---
     async function mergeBranchApi() {
         const branch_id = document.getElementById('mergeBranch').value;

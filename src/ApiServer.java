@@ -222,26 +222,49 @@ public class ApiServer {
             addCorsHeaders(exchange);
             String method = exchange.getRequestMethod();
             if ("OPTIONS".equals(method)) { exchange.sendResponseHeaders(204, -1); return; }
-            if ("GET".equals(method)) {
-                String query = exchange.getRequestURI().getQuery();
-                String repositoryId = null, branchId = null;
-                if (query != null) {
-                    for (String param : query.split("&")) {
-                        if (param.startsWith("repository_id=")) repositoryId = param.substring("repository_id=".length());
-                        if (param.startsWith("branch_id=")) branchId = param.substring("branch_id=".length());
+            if ("POST".equals(method)) {
+                String requestBody = readRequestBody(exchange);
+                String branchId = parseFieldFromJson(requestBody, "branch_id");
+                // ブランチのhead_commit_id取得
+                Integer headCommitId = null;
+                String url = "jdbc:sqlite:database/database.db";
+                try (Connection conn = DriverManager.getConnection(url)) {
+                    String sql = "SELECT head_commit_id FROM branch WHERE id = ?";
+                    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                        pstmt.setInt(1, Integer.parseInt(branchId));
+                        try (ResultSet rs = pstmt.executeQuery()) {
+                            if (rs.next()) {
+                                headCommitId = rs.getInt("head_commit_id");
+                                if (rs.wasNull()) headCommitId = null;
+                            }
+                        }
                     }
+                } catch (SQLException | NumberFormatException e) { headCommitId = null; }
+                List<Map<String, String>> files = new ArrayList<>();
+                if (headCommitId != null) {
+                    try (Connection conn = DriverManager.getConnection(url)) {
+                        String fileSql = "SELECT id, commit_id, content FROM file WHERE commit_id = ?";
+                        try (PreparedStatement pstmt = conn.prepareStatement(fileSql)) {
+                            pstmt.setInt(1, headCommitId);
+                            try (ResultSet rs = pstmt.executeQuery()) {
+                                while (rs.next()) {
+                                    Map<String, String> f = new LinkedHashMap<>();
+                                    f.put("commit_id", String.valueOf(rs.getInt("commit_id")));
+                                    f.put("file_id", String.valueOf(rs.getInt("id")));
+                                    f.put("text", rs.getString("content"));
+                                    files.add(f);
+                                }
+                            }
+                        }
+                    } catch (SQLException e) { /* ignore */ }
                 }
-                List<Map<String, String>> files = fetchFilesByRepoAndBranch(repositoryId, branchId);
                 StringBuilder json = new StringBuilder("{\"files\":[");
                 for (int i = 0; i < files.size(); i++) {
                     Map<String, String> f = files.get(i);
                     json.append("{");
-                    int j = 0;
-                    for (String k : f.keySet()) {
-                        json.append(String.format("\"%s\":\"%s\"", k, f.get(k)));
-                        if (j < f.size() - 1) json.append(",");
-                        j++;
-                    }
+                    json.append(String.format("\"commit_id\":%s,\"file_id\":%s,\"text\":%s",
+                        f.get("commit_id"), f.get("file_id"),
+                        f.get("text") == null ? "null" : ("\"" + f.get("text").replace("\"", "\\\"") + "\"")));
                     json.append("}");
                     if (i < files.size() - 1) json.append(",");
                 }

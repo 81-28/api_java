@@ -267,20 +267,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/Success'
   /file:
-    get:
+    post:
       tags: [file]
       summary: ファイル表示
-      parameters:
-        - in: query
-          name: repository_id
-          schema:
-            type: integer
-          required: false
-        - in: query
-          name: branch_id
-          schema:
-            type: integer
-          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch_id:
+                  type: integer
       responses:
         '200':
           description: ファイル一覧
@@ -292,7 +290,14 @@ paths:
                   files:
                     type: array
                     items:
-                      $ref: '#/components/schemas/File'
+                      type: object
+                      properties:
+                        commit_id:
+                          type: integer
+                        file_id:
+                          type: integer
+                        text:
+                          type: string
   /merge:
     post:
       tags: [merge]
