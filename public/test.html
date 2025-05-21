@@ -350,6 +350,10 @@
                     commitList.appendChild(opt);
                 });
             }
+            // 付け替えUIのコミット選択肢も更新
+            if (typeof updateChangeCommitSelects === 'function') {
+                await updateChangeCommitSelects();
+            }
         } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
     }
     async function deleteCommit() {
@@ -421,10 +425,17 @@
         const nodes = new vis.DataSet(data.nodes.map(n => ({
             id: n.id,
             label: n.label + (n.branch ? `\n[${n.branch}]` : ''),
-            shape: 'box',
-            color: n.branch ? undefined : '#eee'
+            shape: n.shape || 'box',
+            color: n.color || (n.branch ? undefined : '#eee')
         })));
-        const edges = new vis.DataSet(data.edges.map(e => ({ from: e.from, to: e.to, arrows: 'to' })));
+        const edges = new vis.DataSet(data.edges.map(e => ({
+            from: e.from,
+            to: e.to,
+            arrows: 'to',
+            color: e.color || undefined,
+            dashes: e.dashes || false,
+            label: e.label || undefined
+        })));
         const options = {
             layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed' } },
             nodes: { shape: 'box', font: { size: 14 } },
