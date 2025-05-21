@@ -335,8 +335,8 @@ public class ApiServer {
             "CREATE TABLE IF NOT EXISTS repository (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_id INTEGER)",
             // ブランチ
             "CREATE TABLE IF NOT EXISTS branch (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, repository_id INTEGER, head_commit_id INTEGER)",
-            // コミット（parent_commit_id_2追加）
-            "CREATE TABLE IF NOT EXISTS git_commit (id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id INTEGER, author_id INTEGER, message TEXT, parent_commit_id INTEGER, parent_commit_id_2 INTEGER, created_at DATETIME)",
+            // コミット（repository_idで管理）
+            "CREATE TABLE IF NOT EXISTS git_commit (id INTEGER PRIMARY KEY AUTOINCREMENT, repository_id INTEGER, author_id INTEGER, message TEXT, parent_commit_id INTEGER, parent_commit_id_2 INTEGER, created_at DATETIME)",
             // ファイル
             "CREATE TABLE IF NOT EXISTS \"file\" (id INTEGER PRIMARY KEY AUTOINCREMENT, commit_id INTEGER, filename TEXT, content TEXT)"
         };
@@ -490,30 +490,33 @@ public class ApiServer {
             return true;
         } catch (SQLException | NumberFormatException e) { return false; }
     }
-    // コミット＋内容＋head更新
+    // コミット＋内容＋head更新（repository_idで管理）
     private static boolean createCommitSnapshot(String branchIdStr, String message, String authorIdStr, String content) {
         String url = "jdbc:sqlite:database/database.db";
         Connection conn = null;
         try {
             conn = DriverManager.getConnection(url);
             conn.setAutoCommit(false);
-            // 1. parent_commit_id取得
+            // 1. parent_commit_id取得 & repository_id取得
             Integer parentCommitId = null;
-            String parentSql = "SELECT head_commit_id FROM branch WHERE id = ?";
+            Integer repositoryId = null;
+            String parentSql = "SELECT head_commit_id, repository_id FROM branch WHERE id = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(parentSql)) {
                 pstmt.setInt(1, Integer.parseInt(branchIdStr));
                 try (ResultSet rs = pstmt.executeQuery()) {
                     if (rs.next()) {
                         parentCommitId = rs.getInt("head_commit_id");
                         if (rs.wasNull()) parentCommitId = null;
+                        repositoryId = rs.getInt("repository_id");
                     }
                 }
             }
+            if (repositoryId == null) { conn.rollback(); return false; }
             // 2. commit挿入（parent_commit_id_2はnull）
-            String commitSql = "INSERT INTO git_commit(branch_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at) VALUES(?, ?, ?, ?, NULL, datetime('now'))";
+            String commitSql = "INSERT INTO git_commit(repository_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at) VALUES(?, ?, ?, ?, NULL, datetime('now'))";
             int newCommitId = -1;
             try (PreparedStatement pstmt = conn.prepareStatement(commitSql, PreparedStatement.RETURN_GENERATED_KEYS)) {
-                pstmt.setInt(1, Integer.parseInt(branchIdStr));
+                pstmt.setInt(1, repositoryId);
                 pstmt.setInt(2, Integer.parseInt(authorIdStr));
                 pstmt.setString(3, message);
                 if (parentCommitId != null) pstmt.setInt(4, parentCommitId); else pstmt.setNull(4, java.sql.Types.INTEGER);
@@ -548,19 +551,19 @@ public class ApiServer {
         }
     }
 
-    // コミット一覧取得（Map形式で返す）
-    private static List<Map<String, String>> fetchAllCommits(String branchId) {
+    // コミット一覧取得（repository_idで取得）
+    private static List<Map<String, String>> fetchAllCommits(String repositoryId) {
         List<Map<String, String>> commits = new ArrayList<>();
         String url = "jdbc:sqlite:database/database.db";
-        String sql = (branchId != null) ? "SELECT id, branch_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at FROM git_commit WHERE branch_id = ?" : "SELECT id, branch_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at FROM git_commit";
+        String sql = (repositoryId != null) ? "SELECT id, repository_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at FROM git_commit WHERE repository_id = ?" : "SELECT id, repository_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at FROM git_commit";
         try (Connection conn = DriverManager.getConnection(url);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            if (branchId != null) pstmt.setInt(1, Integer.parseInt(branchId));
+            if (repositoryId != null) pstmt.setInt(1, Integer.parseInt(repositoryId));
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     Map<String, String> c = new LinkedHashMap<>();
                     c.put("id", String.valueOf(rs.getInt("id")));
-                    c.put("branch_id", String.valueOf(rs.getInt("branch_id")));
+                    c.put("repository_id", String.valueOf(rs.getInt("repository_id")));
                     c.put("author_id", String.valueOf(rs.getInt("author_id")));
                     c.put("message", rs.getString("message"));
                     c.put("parent_commit_id", String.valueOf(rs.getInt("parent_commit_id")));
@@ -751,6 +754,27 @@ public class ApiServer {
         List<String> edges = new ArrayList<>();
         List<String> branchPointers = new ArrayList<>(); // 追加: ブランチ→コミットの矢印
         try (Connection conn = DriverManager.getConnection(url)) {
+            // 全コミット取得（リポジトリ単位）
+            String commitSql = "SELECT id, message, parent_commit_id, parent_commit_id_2 FROM git_commit WHERE repository_id = ?";
+            try (PreparedStatement cp = conn.prepareStatement(commitSql)) {
+                cp.setInt(1, Integer.parseInt(repositoryId));
+                try (ResultSet crs = cp.executeQuery()) {
+                    while (crs.next()) {
+                        int commitId = crs.getInt("id");
+                        String msg = crs.getString("message");
+                        int parent = crs.getInt("parent_commit_id");
+                        int parent2 = crs.getInt("parent_commit_id_2");
+                        nodes.add(String.format("{\"id\":%d,\"label\":\"%s\"}", commitId, msg));
+                        if (parent != 0) {
+                            edges.add(String.format("{\"from\":%d,\"to\":%d}", parent, commitId));
+                        }
+                        // 2親目があればエッジ追加（マージコミット）
+                        if (parent2 != 0) {
+                            edges.add(String.format("{\"from\":%d,\"to\":%d,\"dashes\":true,\"color\":\"#0af\"}", parent2, commitId));
+                        }
+                    }
+                }
+            }
             // 全ブランチ取得
             String branchSql = "SELECT id, name, head_commit_id FROM branch WHERE repository_id = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(branchSql)) {
@@ -760,27 +784,6 @@ public class ApiServer {
                         int branchId = rs.getInt("id");
                         String branchName = rs.getString("name");
                         int headCommitId = rs.getInt("head_commit_id");
-                        // 各ブランチのコミットを取得
-                        String commitSql = "SELECT id, message, parent_commit_id, parent_commit_id_2 FROM git_commit WHERE branch_id = ?";
-                        try (PreparedStatement cp = conn.prepareStatement(commitSql)) {
-                            cp.setInt(1, branchId);
-                            try (ResultSet crs = cp.executeQuery()) {
-                                while (crs.next()) {
-                                    int commitId = crs.getInt("id");
-                                    String msg = crs.getString("message");
-                                    int parent = crs.getInt("parent_commit_id");
-                                    int parent2 = crs.getInt("parent_commit_id_2");
-                                    nodes.add(String.format("{\"id\":%d,\"label\":\"%s\",\"branch\":\"%s\"}", commitId, msg, branchName));
-                                    if (parent != 0) {
-                                        edges.add(String.format("{\"from\":%d,\"to\":%d}", parent, commitId));
-                                    }
-                                    // 2親目があればエッジ追加（マージコミット）
-                                    if (parent2 != 0) {
-                                        edges.add(String.format("{\"from\":%d,\"to\":%d,\"dashes\":true,\"color\":\"#0af\"}", parent2, commitId));
-                                    }
-                                }
-                            }
-                        }
                         // ブランチ→コミットの矢印（head_commit_idが0でなければ）
                         if (headCommitId != 0) {
                             branchPointers.add(String.format("{\"from\":\"branch-%d\",\"to\":%d,\"label\":\"%s\",\"color\":\"#f00\"}", branchId, headCommitId, branchName));
