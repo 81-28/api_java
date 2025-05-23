@@ -209,7 +209,7 @@ paths:
       summary: コミット一覧取得
       parameters:
         - in: query
-          name: branch_id
+          name: repository_id
           schema:
             type: integer
           required: false

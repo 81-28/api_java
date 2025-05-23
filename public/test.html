@@ -87,8 +87,8 @@
             <br>
             <button type="button" onclick="createCommit()">コミット作成</button>
         </form>
-        <label for="commitBranchList">ブランチで絞り込み:</label>
-        <select id="commitBranchList"></select>
+        <label for="commitRepoList">リポジトリで絞り込み:</label>
+        <select id="commitRepoList"></select>
         <button onclick="getCommits()">コミット一覧取得</button>
         <select id="commitList" style="min-width:120px;"></select>
         <button onclick="deleteCommit()">コミット削除</button>
@@ -334,10 +334,10 @@
         } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
     }
     async function getCommits() {
-        const branch_id = document.getElementById('commitBranchList').value;
+        const repository_id = document.getElementById('commitRepoList').value;
         const responseElement = document.getElementById('response');
         let url = apiCommitUrl;
-        if (branch_id) url += `?branch_id=${branch_id}`;
+        if (repository_id) url += `?repository_id=${repository_id}`;
         try {
             const res = await fetch(url, { method: 'GET' });
             const data = await res.json();
@@ -348,7 +348,7 @@
                 data.commits.forEach(c => {
                     const opt = document.createElement('option');
                     opt.value = c.id;
-                    opt.textContent = `${c.id}: ${c.message} (branch:${c.branch_id})`;
+                    opt.textContent = `${c.id}: ${c.message} (repo:${c.repository_id})`;
                     commitList.appendChild(opt);
                 });
             }
@@ -551,7 +551,8 @@
                 document.getElementById('branchRepo'),
                 document.getElementById('branchRepoList'),
                 document.getElementById('fileRepo'),
-                document.getElementById('graphRepo')
+                document.getElementById('graphRepo'),
+                document.getElementById('commitRepoList')
             ];
             repoSelects.forEach(sel => { sel.innerHTML = ''; });
             if (data.repositories) {
@@ -574,7 +575,6 @@
             const data = await res.json();
             const branchSelects = [
                 document.getElementById('commitBranch'),
-                document.getElementById('commitBranchList'),
                 document.getElementById('mergeBranch'),
                 document.getElementById('mergeTargetBranch')
             ];
@@ -620,71 +620,11 @@
         await getRepositories();
         await getBranches();
         await getCommits();
-        updateCommitBranchSelect();
-        updateCommitBranchListSelect();
         await updateAllSelects();
     }
-    // 主要操作の後にafterDataChangeを呼ぶように既存関数を修正してください
     // 初回ロード時
     window.onload = afterDataChange;
 
-    function updateCommitBranchSelect() {
-        const branchSelect = document.getElementById('commitBranch');
-        const repoId = document.getElementById('repoList').value;
-        branchSelect.innerHTML = '';
-        if (!repoId) return;
-        fetch(apiBranchUrl + `?repository_id=${repoId}`)
-            .then(res => res.json())
-            .then(data => {
-                if (!data.branches) return;
-                data.branches.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b.id;
-                    opt.textContent = b.name;
-                    branchSelect.appendChild(opt);
-                });
-                onCommitBranchChange(); // ブランチ初期値時も内容取得
-            });
-    }
-
-    function updateCommitBranchListSelect() {
-        const branchListSelect = document.getElementById('commitBranchList');
-        const repoId = document.getElementById('repoList').value;
-        branchListSelect.innerHTML = '';
-        if (!repoId) return;
-        fetch(apiBranchUrl + `?repository_id=${repoId}`)
-            .then(res => res.json())
-            .then(data => {
-                if (!data.branches) return;
-                data.branches.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b.id;
-                    opt.textContent = b.name;
-                    branchListSelect.appendChild(opt);
-                });
-            });
-    }
-
-    function onCommitBranchChange() {
-        const branchId = document.getElementById('commitBranch').value;
-        if (!branchId) return;
-        fetch(apiCommitUrl + `?branch_id=${branchId}`)
-            .then(res => res.json())
-            .then(commitsData => {
-                if (!commitsData.commits || commitsData.commits.length === 0) {
-                    document.getElementById('commitContent').value = '';
-                    return;
-                }
-                const latestCommit = commitsData.commits[commitsData.commits.length - 1];
-                // 最新コミットの内容取得
-                fetch(apiFileUrl + `?commit_id=${latestCommit.id}`)
-                    .then(res => res.json())
-                    .then(filesData => {
-                        // 仕様上、1ファイルのみ想定（複数なら先頭）
-                        document.getElementById('commitContent').value = (filesData.files && filesData.files.length > 0) ? filesData.files[0].text : '';
-                    });
-            });
-    }
     // --- 付け替えUIの初期化・連動 ---
     async function updateChangeBranchSelects() {
         // ブランチ一覧

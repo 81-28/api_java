@@ -182,13 +182,13 @@ public class ApiServer {
                 sendResponse(exchange, 200, jsonResponse);
             } else if ("GET".equals(method)) {
                 String query = exchange.getRequestURI().getQuery();
-                String branchId = null;
-                if (query != null && query.contains("branch_id=")) {
+                String repositoryId = null;
+                if (query != null && query.contains("repository_id=")) {
                     for (String param : query.split("&")) {
-                        if (param.startsWith("branch_id=")) branchId = param.substring("branch_id=".length());
+                        if (param.startsWith("repository_id=")) repositoryId = param.substring("repository_id=".length());
                     }
                 }
-                List<Map<String, String>> commits = fetchAllCommits(branchId);
+                List<Map<String, String>> commits = fetchAllCommits(repositoryId);
                 StringBuilder json = new StringBuilder("{\"commits\":[");
                 for (int i = 0; i < commits.size(); i++) {
                     Map<String, String> c = commits.get(i);
