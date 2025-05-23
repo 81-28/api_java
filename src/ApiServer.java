@@ -1,4 +1,9 @@
-// package src;
+// ===============================
+// ApiServer.java
+// SQLiteを用いた簡易Git風APIサーバ
+// REST APIでユーザー・リポジトリ・ブランチ・コミット・ファイル管理、マージ・グラフ表示も対応
+// ===============================
+
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
@@ -17,26 +22,128 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.LinkedHashMap;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 
+/**
+ * メインAPIサーバクラス
+ * - SQLiteを利用した簡易バージョン管理API
+ * - ユーザー/リポジトリ/ブランチ/コミット/ファイル/マージ/グラフAPIを提供
+ */
 public class ApiServer {
+    // --- DB接続設定 ---
+    private static final String DB_URL = "jdbc:sqlite:database/database.db";
+    private static final String CONTENT_TYPE_JSON = "application/json; charset=UTF-8";
+
+    /**
+     * サーバ起動・各APIエンドポイント登録
+     */
     public static void main(String[] args) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
-        server.createContext("/api/user", new UserHandler());
-        server.createContext("/api/repository", new RepositoryHandler());
-        server.createContext("/api/branch", new BranchHandler());
-        server.createContext("/api/commit", new CommitHandler());
-        server.createContext("/api/file", new FileHandler());
-        server.createContext("/api/merge", new MergeHandler());
-        server.createContext("/api/force-merge", new ForceMergeHandler()); // 追加
-        server.createContext("/api/graph", new GraphHandler());
+        // 各APIエンドポイントを登録
+        server.createContext("/api/user", new UserHandler());           // ユーザー管理
+        server.createContext("/api/repository", new RepositoryHandler()); // リポジトリ管理
+        server.createContext("/api/branch", new BranchHandler());         // ブランチ管理
+        server.createContext("/api/commit", new CommitHandler());         // コミット管理
+        server.createContext("/api/file", new FileHandler());             // ファイル取得
+        server.createContext("/api/merge", new MergeHandler());           // 厳密マージ
+        server.createContext("/api/force-merge", new ForceMergeHandler());// 強制マージ
+        server.createContext("/api/graph", new GraphHandler());           // グラフ表示
         server.setExecutor(null);
         server.start();
         System.out.println("Server is running on http://localhost:8080/api");
     }
 
+    // --- 共通ユーティリティ ---
+    /**
+     * リクエストボディを文字列で取得
+     */
+    private static String readRequestBody(HttpExchange exchange) throws IOException {
+        try (Scanner scanner = new Scanner(exchange.getRequestBody()).useDelimiter("\\A")) {
+            return scanner.hasNext() ? scanner.next() : "";
+        }
+    }
+    /**
+     * レスポンス送信（JSON/UTF-8固定）
+     */
+    private static void sendResponse(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes("UTF-8");
+        exchange.getResponseHeaders().set("Content-Type", CONTENT_TYPE_JSON);
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) { os.write(bytes); }
+    }
+    /**
+     * CORSヘッダ付与
+     */
+    private static void addCorsHeaders(HttpExchange exchange) {
+        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, DELETE, PUT, OPTIONS");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+    }
+    /**
+     * DBコネクション取得
+     */
+    private static Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(DB_URL);
+    }
+    /**
+     * JSON文字列から指定フィールド値を抽出（簡易実装）
+     */
+    private static String parseFieldFromJson(String json, String field) {
+        if (json.contains("\"" + field + "\":")) {
+            int startIndex = json.indexOf("\"" + field + "\":") + field.length() + 3;
+            int endIndex = json.indexOf('"', startIndex + 1);
+            return json.substring(startIndex + 1, endIndex);
+        }
+        return "";
+    }
+    // --- JSONユーティリティ ---
+    /**
+     * List<Map>をJSON配列形式に変換
+     */
+    private static String toJsonArray(List<? extends Map<String, ?>> list, String arrayName) {
+        StringBuilder json = new StringBuilder();
+        json.append("{\"").append(arrayName).append("\": [");
+        for (int i = 0; i < list.size(); i++) {
+            json.append(toJsonObject(list.get(i)));
+            if (i < list.size() - 1) json.append(",");
+        }
+        json.append("]}");
+        return json.toString();
+    }
+    /**
+     * MapをJSONオブジェクト形式に変換
+     */
+    private static String toJsonObject(Map<String, ?> map) {
+        StringBuilder json = new StringBuilder();
+        json.append("{");
+        int j = 0;
+        for (Map.Entry<String, ?> entry : map.entrySet()) {
+            json.append(String.format("\"%s\":%s", entry.getKey(), toJsonValue(entry.getValue())));
+            if (j < map.size() - 1) json.append(",");
+            j++;
+        }
+        json.append("}");
+        return json.toString();
+    }
+    /**
+     * 値をJSON値としてエスケープ
+     */
+    private static String toJsonValue(Object v) {
+        if (v == null) return "null";
+        if (v instanceof Number || v instanceof Boolean) return v.toString();
+        return String.format("\"%s\"", v.toString().replace("\"", "\\\""));
+    }
+
+    // ===============================
+    // 各APIハンドラ（User/Repository/Branch/Commit/File/Merge/ForceMerge/Graph）
+    // ===============================
+
     // --- ユーザーAPI ---
+    /**
+     * /api/user
+     * - POST: ユーザー追加
+     * - GET: ユーザー一覧取得
+     * - DELETE: ユーザー削除
+     */
     static class UserHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -47,24 +154,15 @@ public class ApiServer {
                 String requestBody = readRequestBody(exchange);
                 String username = parseFieldFromJson(requestBody, "username");
                 boolean success = addUser(username);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else if ("GET".equals(method)) {
-                List<String[]> users = fetchAllUsers();
-                StringBuilder json = new StringBuilder("{\"users\":[");
-                for (int i = 0; i < users.size(); i++) {
-                    String[] u = users.get(i);
-                    json.append(String.format("{\"id\":%s,\"username\":\"%s\"}", u[0], u[1]));
-                    if (i < users.size() - 1) json.append(",");
-                }
-                json.append("]}");
-                sendResponse(exchange, 200, json.toString());
+                List<Map<String, Object>> users = fetchAllUsers();
+                sendResponse(exchange, 200, toJsonArray(users, "users"));
             } else if ("DELETE".equals(method)) {
                 String requestBody = readRequestBody(exchange);
                 String idStr = parseFieldFromJson(requestBody, "id");
                 boolean success = deleteUserById(idStr);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
@@ -72,6 +170,12 @@ public class ApiServer {
     }
 
     // --- リポジトリAPI ---
+    /**
+     * /api/repository
+     * - POST: リポジトリ追加
+     * - GET: リポジトリ一覧取得（owner_id指定可）
+     * - DELETE: リポジトリ削除
+     */
     static class RepositoryHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -83,8 +187,7 @@ public class ApiServer {
                 String name = parseFieldFromJson(requestBody, "name");
                 String ownerId = parseFieldFromJson(requestBody, "owner_id");
                 boolean success = addRepository(name, ownerId);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else if ("GET".equals(method)) {
                 String query = exchange.getRequestURI().getQuery();
                 String ownerId = null;
@@ -93,21 +196,13 @@ public class ApiServer {
                         if (param.startsWith("owner_id=")) ownerId = param.substring("owner_id=".length());
                     }
                 }
-                List<String[]> repos = fetchAllRepositories(ownerId);
-                StringBuilder json = new StringBuilder("{\"repositories\":[");
-                for (int i = 0; i < repos.size(); i++) {
-                    String[] r = repos.get(i);
-                    json.append(String.format("{\"id\":%s,\"name\":\"%s\",\"owner_id\":%s}", r[0], r[1], r[2]));
-                    if (i < repos.size() - 1) json.append(",");
-                }
-                json.append("]}");
-                sendResponse(exchange, 200, json.toString());
+                List<Map<String, Object>> repos = fetchAllRepositories(ownerId);
+                sendResponse(exchange, 200, toJsonArray(repos, "repositories"));
             } else if ("DELETE".equals(method)) {
                 String requestBody = readRequestBody(exchange);
                 String idStr = parseFieldFromJson(requestBody, "id");
                 boolean success = deleteRepositoryById(idStr);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
@@ -115,6 +210,13 @@ public class ApiServer {
     }
 
     // --- ブランチAPI ---
+    /**
+     * /api/branch
+     * - POST: ブランチ追加
+     * - GET: ブランチ一覧取得（repository_id指定可）
+     * - DELETE: ブランチ削除
+     * - PUT: ブランチのHEADコミット更新
+     */
     static class BranchHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -126,8 +228,7 @@ public class ApiServer {
                 String name = parseFieldFromJson(requestBody, "name");
                 String repositoryId = parseFieldFromJson(requestBody, "repository_id");
                 boolean success = addBranch(name, repositoryId);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else if ("GET".equals(method)) {
                 String query = exchange.getRequestURI().getQuery();
                 String repositoryId = null;
@@ -136,28 +237,19 @@ public class ApiServer {
                         if (param.startsWith("repository_id=")) repositoryId = param.substring("repository_id=".length());
                     }
                 }
-                List<String[]> branches = fetchAllBranches(repositoryId);
-                StringBuilder json = new StringBuilder("{\"branches\":[");
-                for (int i = 0; i < branches.size(); i++) {
-                    String[] b = branches.get(i);
-                    json.append(String.format("{\"id\":%s,\"name\":\"%s\",\"repository_id\":%s,\"head_commit_id\":%s}", b[0], b[1], b[2], b[3]));
-                    if (i < branches.size() - 1) json.append(",");
-                }
-                json.append("]}");
-                sendResponse(exchange, 200, json.toString());
+                List<Map<String, Object>> branches = fetchAllBranches(repositoryId);
+                sendResponse(exchange, 200, toJsonArray(branches, "branches"));
             } else if ("DELETE".equals(method)) {
                 String requestBody = readRequestBody(exchange);
                 String idStr = parseFieldFromJson(requestBody, "id");
                 boolean success = deleteBranchById(idStr);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else if ("PUT".equals(method)) {
                 String requestBody = readRequestBody(exchange);
                 String branchId = parseFieldFromJson(requestBody, "id");
                 String commitId = parseFieldFromJson(requestBody, "commit_id");
                 boolean success = updateBranchHead(branchId, commitId);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
@@ -165,6 +257,12 @@ public class ApiServer {
     }
 
     // --- コミットAPI ---
+    /**
+     * /api/commit
+     * - POST: コミット作成（スナップショット）
+     * - GET: コミット一覧取得（repository_id指定可）
+     * - DELETE: コミット削除
+     */
     static class CommitHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -178,8 +276,7 @@ public class ApiServer {
                 String authorId = parseFieldFromJson(requestBody, "author_id");
                 String content = parseFieldFromJson(requestBody, "content");
                 boolean success = createCommitSnapshot(branchId, message, authorId, content);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else if ("GET".equals(method)) {
                 String query = exchange.getRequestURI().getQuery();
                 String repositoryId = null;
@@ -188,28 +285,13 @@ public class ApiServer {
                         if (param.startsWith("repository_id=")) repositoryId = param.substring("repository_id=".length());
                     }
                 }
-                List<Map<String, String>> commits = fetchAllCommits(repositoryId);
-                StringBuilder json = new StringBuilder("{\"commits\":[");
-                for (int i = 0; i < commits.size(); i++) {
-                    Map<String, String> c = commits.get(i);
-                    json.append("{");
-                    int j = 0;
-                    for (String k : c.keySet()) {
-                        json.append(String.format("\"%s\":\"%s\"", k, c.get(k)));
-                        if (j < c.size() - 1) json.append(",");
-                        j++;
-                    }
-                    json.append("}");
-                    if (i < commits.size() - 1) json.append(",");
-                }
-                json.append("]}");
-                sendResponse(exchange, 200, json.toString());
+                List<Map<String, Object>> commits = fetchAllCommits(repositoryId);
+                sendResponse(exchange, 200, toJsonArray(commits, "commits"));
             } else if ("DELETE".equals(method)) {
                 String requestBody = readRequestBody(exchange);
                 String idStr = parseFieldFromJson(requestBody, "id");
                 boolean success = deleteCommitById(idStr);
-                String jsonResponse = success ? "{\"success\":true}" : "{\"success\":false}";
-                sendResponse(exchange, 200, jsonResponse);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
@@ -217,6 +299,10 @@ public class ApiServer {
     }
 
     // --- ファイル表示API ---
+    /**
+     * /api/file
+     * - GET: 指定ブランチの最新ファイル内容取得
+     */
     static class FileHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -231,58 +317,20 @@ public class ApiServer {
                         if (param.startsWith("branch_id=")) branchId = param.substring("branch_id=".length());
                     }
                 }
-                // ブランチのhead_commit_id取得
-                Integer headCommitId = null;
-                String url = "jdbc:sqlite:database/database.db";
-                try (Connection conn = DriverManager.getConnection(url)) {
-                    String sql = "SELECT head_commit_id FROM branch WHERE id = ?";
-                    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                        pstmt.setInt(1, Integer.parseInt(branchId));
-                        try (ResultSet rs = pstmt.executeQuery()) {
-                            if (rs.next()) {
-                                headCommitId = rs.getInt("head_commit_id");
-                                if (rs.wasNull()) headCommitId = null;
-                            }
-                        }
-                    }
-                } catch (SQLException | NumberFormatException e) { headCommitId = null; }
-                List<Map<String, String>> files = new ArrayList<>();
-                if (headCommitId != null) {
-                    try (Connection conn = DriverManager.getConnection(url)) {
-                        String fileSql = "SELECT id, commit_id, content FROM file WHERE commit_id = ?";
-                        try (PreparedStatement pstmt = conn.prepareStatement(fileSql)) {
-                            pstmt.setInt(1, headCommitId);
-                            try (ResultSet rs = pstmt.executeQuery()) {
-                                while (rs.next()) {
-                                    Map<String, String> f = new LinkedHashMap<>();
-                                    f.put("commit_id", String.valueOf(rs.getInt("commit_id")));
-                                    f.put("file_id", String.valueOf(rs.getInt("id")));
-                                    f.put("text", rs.getString("content"));
-                                    files.add(f);
-                                }
-                            }
-                        }
-                    } catch (SQLException e) { /* ignore */ }
-                }
-                StringBuilder json = new StringBuilder("{\"files\":[");
-                for (int i = 0; i < files.size(); i++) {
-                    Map<String, String> f = files.get(i);
-                    json.append("{");
-                    json.append(String.format("\"commit_id\":%s,\"file_id\":%s,\"text\":%s",
-                        f.get("commit_id"), f.get("file_id"),
-                        f.get("text") == null ? "null" : ("\"" + f.get("text").replace("\"", "\\\"") + "\"")));
-                    json.append("}");
-                    if (i < files.size() - 1) json.append(",");
-                }
-                json.append("]}");
-                sendResponse(exchange, 200, json.toString());
+                List<Map<String, Object>> files = fetchFilesByBranch(branchId);
+                sendResponse(exchange, 200, toJsonArray(files, "files"));
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
         }
     }
 
-    // --- マージAPI ---
+    // --- マージAPI（厳密: 内容一致時のみマージ） ---
+    /**
+     * /api/merge
+     * - POST: 2ブランチの内容が一致する場合のみマージコミット作成
+     *   不一致時は両方の内容を返す
+     */
     static class MergeHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -291,26 +339,10 @@ public class ApiServer {
             if ("OPTIONS".equals(method)) { exchange.sendResponseHeaders(204, -1); return; }
             if ("POST".equals(method)) {
                 String requestBody = readRequestBody(exchange);
-                // 新仕様: branch_id_1, branch_id_2
                 String branchId1 = parseFieldFromJson(requestBody, "branch_id_1");
                 String branchId2 = parseFieldFromJson(requestBody, "branch_id_2");
                 Map<String, Object> result = mergeBranchesStrict(branchId1, branchId2);
-                StringBuilder json = new StringBuilder("{");
-                int i = 0;
-                for (String k : result.keySet()) {
-                    Object v = result.get(k);
-                    if (v instanceof String) {
-                        json.append(String.format("\"%s\":\"%s\"", k, v.toString().replace("\"", "\\\"")));
-                    } else if (v instanceof Boolean) {
-                        json.append(String.format("\"%s\":%s", k, v.toString()));
-                    } else {
-                        json.append(String.format("\"%s\":%s", k, v));
-                    }
-                    if (i < result.size() - 1) json.append(",");
-                    i++;
-                }
-                json.append("}");
-                sendResponse(exchange, 200, json.toString());
+                sendResponse(exchange, 200, toJsonObject(result));
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
@@ -318,6 +350,11 @@ public class ApiServer {
     }
 
     // --- 強制マージAPI ---
+    /**
+     * /api/force-merge
+     * - POST: 指定テキストで強制的にマージコミット作成
+     *   両ブランチのHEADを新コミットに更新
+     */
     static class ForceMergeHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -329,9 +366,8 @@ public class ApiServer {
                 String branchId1 = parseFieldFromJson(requestBody, "branch_id_1");
                 String branchId2 = parseFieldFromJson(requestBody, "branch_id_2");
                 String text = parseFieldFromJson(requestBody, "text");
-                boolean success = forceMerge(branchId1, branchId2, text);
-                String json = String.format("{\"success\":%s}", success ? "true" : "false");
-                sendResponse(exchange, 200, json);
+                boolean success = ApiServer.forceMerge(branchId1, branchId2, text);
+                sendResponse(exchange, 200, String.format("{\"success\":%s}", success));
             } else {
                 exchange.sendResponseHeaders(405, -1);
             }
@@ -339,6 +375,10 @@ public class ApiServer {
     }
 
     // --- グラフAPI ---
+    /**
+     * /api/graph
+     * - GET: リポジトリのコミット・ブランチ構造をグラフ形式（JSON）で返す
+     */
     static class GraphHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -361,54 +401,14 @@ public class ApiServer {
         }
     }
 
-    // --- 共通ユーティリティ ---
-    private static String readRequestBody(HttpExchange exchange) throws IOException {
-        try (Scanner scanner = new Scanner(exchange.getRequestBody()).useDelimiter("\\A")) {
-            return scanner.hasNext() ? scanner.next() : "";
-        }
-    }
-    private static void sendResponse(HttpExchange exchange, int status, String body) throws IOException {
-        byte[] bytes = body.getBytes("UTF-8");
-        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
-        exchange.sendResponseHeaders(status, bytes.length);
-        try (OutputStream os = exchange.getResponseBody()) { os.write(bytes); }
-    }
-    private static void addCorsHeaders(HttpExchange exchange) {
-        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, DELETE, PUT, OPTIONS");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
-    }
+    // ===============================
+    // DB操作・マージ・グラフ・強制マージの実装
+    // ===============================
 
-    private static void initializeDatabase() {
-        String url = "jdbc:sqlite:database/database.db";
-        String[] sqls = new String[] {
-            // ユーザーテーブル
-            "CREATE TABLE IF NOT EXISTS name (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE)",
-            // リポジトリ
-            "CREATE TABLE IF NOT EXISTS repository (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_id INTEGER)",
-            // ブランチ
-            "CREATE TABLE IF NOT EXISTS branch (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, repository_id INTEGER, head_commit_id INTEGER)",
-            // コミット（repository_idで管理）
-            "CREATE TABLE IF NOT EXISTS git_commit (id INTEGER PRIMARY KEY AUTOINCREMENT, repository_id INTEGER, author_id INTEGER, message TEXT, parent_commit_id INTEGER, parent_commit_id_2 INTEGER, created_at DATETIME)",
-            // ファイル
-            "CREATE TABLE IF NOT EXISTS \"file\" (id INTEGER PRIMARY KEY AUTOINCREMENT, commit_id INTEGER, filename TEXT, content TEXT)"
-        };
-        try (Connection conn = DriverManager.getConnection(url)) {
-            for (String sql : sqls) {
-                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                    pstmt.executeUpdate();
-                }
-            }
-        } catch (SQLException e) {
-            System.err.println("Database initialization error: " + e.getMessage());
-        }
-    }
-
-    // ユーザー追加
+    // --- ユーザー追加 ---
     private static boolean addUser(String username) {
-        String url = "jdbc:sqlite:database/database.db";
         String sql = "INSERT INTO name(username) VALUES(?)";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, username);
             pstmt.executeUpdate();
@@ -417,27 +417,28 @@ public class ApiServer {
             return false;
         }
     }
-    // ユーザー一覧
-    private static List<String[]> fetchAllUsers() {
-        List<String[]> users = new ArrayList<>();
-        String url = "jdbc:sqlite:database/database.db";
+    // --- ユーザー一覧取得 ---
+    private static List<Map<String, Object>> fetchAllUsers() {
+        List<Map<String, Object>> users = new ArrayList<>();
         String sql = "SELECT id, username FROM name";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql);
              ResultSet rs = pstmt.executeQuery()) {
             while (rs.next()) {
-                users.add(new String[]{String.valueOf(rs.getInt("id")), rs.getString("username")});
+                Map<String, Object> u = new LinkedHashMap<>();
+                u.put("id", rs.getInt("id"));
+                u.put("username", rs.getString("username"));
+                users.add(u);
             }
         } catch (SQLException e) {
             System.err.println("Database error: " + e.getMessage());
         }
         return users;
     }
-    // ユーザー削除
+    // --- ユーザー削除 ---
     private static boolean deleteUserById(String idStr) {
-        String url = "jdbc:sqlite:database/database.db";
         String sql = "DELETE FROM name WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, Integer.parseInt(idStr));
             int affected = pstmt.executeUpdate();
@@ -446,12 +447,10 @@ public class ApiServer {
             return false;
         }
     }
-
-    // リポジトリ追加
+    // --- リポジトリ追加 ---
     private static boolean addRepository(String name, String ownerIdStr) {
-        String url = "jdbc:sqlite:database/database.db";
         String sql = "INSERT INTO repository(name, owner_id) VALUES(?, ?)";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, name);
             pstmt.setInt(2, Integer.parseInt(ownerIdStr));
@@ -461,17 +460,20 @@ public class ApiServer {
             return false;
         }
     }
-    // リポジトリ一覧
-    private static List<String[]> fetchAllRepositories(String ownerId) {
-        List<String[]> repos = new ArrayList<>();
-        String url = "jdbc:sqlite:database/database.db";
+    // --- リポジトリ一覧取得 ---
+    private static List<Map<String, Object>> fetchAllRepositories(String ownerId) {
+        List<Map<String, Object>> repos = new ArrayList<>();
         String sql = (ownerId != null) ? "SELECT id, name, owner_id FROM repository WHERE owner_id = ?" : "SELECT id, name, owner_id FROM repository";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             if (ownerId != null) pstmt.setInt(1, Integer.parseInt(ownerId));
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
-                    repos.add(new String[]{String.valueOf(rs.getInt("id")), rs.getString("name"), String.valueOf(rs.getInt("owner_id"))});
+                    Map<String, Object> r = new LinkedHashMap<>();
+                    r.put("id", rs.getInt("id"));
+                    r.put("name", rs.getString("name"));
+                    r.put("owner_id", rs.getInt("owner_id"));
+                    repos.add(r);
                 }
             }
         } catch (SQLException | NumberFormatException e) {
@@ -479,11 +481,10 @@ public class ApiServer {
         }
         return repos;
     }
-    // リポジトリ削除
+    // --- リポジトリ削除 ---
     private static boolean deleteRepositoryById(String idStr) {
-        String url = "jdbc:sqlite:database/database.db";
         String sql = "DELETE FROM repository WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, Integer.parseInt(idStr));
             int affected = pstmt.executeUpdate();
@@ -492,12 +493,10 @@ public class ApiServer {
             return false;
         }
     }
-
-    // ブランチ
+    // --- ブランチ追加 ---
     private static boolean addBranch(String name, String repositoryIdStr) {
-        String url = "jdbc:sqlite:database/database.db";
         String sql = "INSERT INTO branch(name, repository_id) VALUES(?, ?)";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, name);
             pstmt.setInt(2, Integer.parseInt(repositoryIdStr));
@@ -505,54 +504,56 @@ public class ApiServer {
             return true;
         } catch (SQLException | NumberFormatException e) { return false; }
     }
-    private static List<String[]> fetchAllBranches(String repositoryId) {
-        List<String[]> branches = new ArrayList<>();
-        String url = "jdbc:sqlite:database/database.db";
+    // --- ブランチ一覧取得 ---
+    private static List<Map<String, Object>> fetchAllBranches(String repositoryId) {
+        List<Map<String, Object>> branches = new ArrayList<>();
         String sql = (repositoryId != null) ? "SELECT id, name, repository_id, head_commit_id FROM branch WHERE repository_id = ?" : "SELECT id, name, repository_id, head_commit_id FROM branch";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             if (repositoryId != null) pstmt.setInt(1, Integer.parseInt(repositoryId));
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
-                    branches.add(new String[]{String.valueOf(rs.getInt("id")), rs.getString("name"), String.valueOf(rs.getInt("repository_id")), String.valueOf(rs.getInt("head_commit_id"))});
+                    Map<String, Object> b = new LinkedHashMap<>();
+                    b.put("id", rs.getInt("id"));
+                    b.put("name", rs.getString("name"));
+                    b.put("repository_id", rs.getInt("repository_id"));
+                    b.put("head_commit_id", rs.getInt("head_commit_id"));
+                    branches.add(b);
                 }
             }
         } catch (SQLException | NumberFormatException e) { System.err.println("Database error: " + e.getMessage()); }
         return branches;
     }
+    // --- ブランチ削除 ---
     private static boolean deleteBranchById(String idStr) {
-        String url = "jdbc:sqlite:database/database.db";
         String sql = "DELETE FROM branch WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, Integer.parseInt(idStr));
             int affected = pstmt.executeUpdate();
             return affected > 0;
         } catch (SQLException | NumberFormatException e) { return false; }
     }
-    // コミット
-    private static boolean addCommit(String branchIdStr, String message, String authorIdStr) {
-        String url = "jdbc:sqlite:database/database.db";
-        String sql = "INSERT INTO git_commit(branch_id, author_id, message, created_at) VALUES(?, ?, ?, datetime('now'))";
-        try (Connection conn = DriverManager.getConnection(url);
+    // --- ブランチのHEADコミット更新 ---
+    private static boolean updateBranchHead(String branchIdStr, String commitIdStr) {
+        String sql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setInt(1, Integer.parseInt(branchIdStr));
-            pstmt.setInt(2, Integer.parseInt(authorIdStr));
-            pstmt.setString(3, message);
-            pstmt.executeUpdate();
-            return true;
+            pstmt.setInt(1, Integer.parseInt(commitIdStr));
+            pstmt.setInt(2, Integer.parseInt(branchIdStr));
+            int affected = pstmt.executeUpdate();
+            return affected > 0;
         } catch (SQLException | NumberFormatException e) { return false; }
     }
-    // コミット＋内容＋head更新（repository_idで管理）
+    // --- コミット作成（スナップショット） ---
     private static boolean createCommitSnapshot(String branchIdStr, String message, String authorIdStr, String content) {
-        String url = "jdbc:sqlite:database/database.db";
         Connection conn = null;
         try {
-            conn = DriverManager.getConnection(url);
+            conn = getConnection();
             conn.setAutoCommit(false);
-            // 1. parent_commit_id取得 & repository_id取得
             Integer parentCommitId = null;
             Integer repositoryId = null;
+            // 対象ブランチのHEADコミット・リポジトリID取得
             String parentSql = "SELECT head_commit_id, repository_id FROM branch WHERE id = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(parentSql)) {
                 pstmt.setInt(1, Integer.parseInt(branchIdStr));
@@ -565,7 +566,7 @@ public class ApiServer {
                 }
             }
             if (repositoryId == null) { conn.rollback(); return false; }
-            // 2. commit挿入（parent_commit_id_2はnull）
+            // 新規コミット作成
             String commitSql = "INSERT INTO git_commit(repository_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at) VALUES(?, ?, ?, ?, NULL, datetime('now'))";
             int newCommitId = -1;
             try (PreparedStatement pstmt = conn.prepareStatement(commitSql, PreparedStatement.RETURN_GENERATED_KEYS)) {
@@ -579,7 +580,7 @@ public class ApiServer {
                 }
             }
             if (newCommitId == -1) { conn.rollback(); return false; }
-            // 3. fileスナップショット保存（main.txt固定）
+            // ファイル保存
             String fileSql = "INSERT INTO file(commit_id, filename, content) VALUES(?, ?, ?)";
             try (PreparedStatement pstmt = conn.prepareStatement(fileSql)) {
                 pstmt.setInt(1, newCommitId);
@@ -587,7 +588,7 @@ public class ApiServer {
                 pstmt.setString(3, content);
                 pstmt.executeUpdate();
             }
-            // 4. branchのhead_commit_id更新
+            // ブランチのHEAD更新
             String updateSql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
                 pstmt.setInt(1, newCommitId);
@@ -603,24 +604,22 @@ public class ApiServer {
             if (conn != null) try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ignore) {}
         }
     }
-
-    // コミット一覧取得（repository_idで取得）
-    private static List<Map<String, String>> fetchAllCommits(String repositoryId) {
-        List<Map<String, String>> commits = new ArrayList<>();
-        String url = "jdbc:sqlite:database/database.db";
+    // --- コミット一覧取得 ---
+    private static List<Map<String, Object>> fetchAllCommits(String repositoryId) {
+        List<Map<String, Object>> commits = new ArrayList<>();
         String sql = (repositoryId != null) ? "SELECT id, repository_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at FROM git_commit WHERE repository_id = ?" : "SELECT id, repository_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at FROM git_commit";
-        try (Connection conn = DriverManager.getConnection(url);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             if (repositoryId != null) pstmt.setInt(1, Integer.parseInt(repositoryId));
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
-                    Map<String, String> c = new LinkedHashMap<>();
-                    c.put("id", String.valueOf(rs.getInt("id")));
-                    c.put("repository_id", String.valueOf(rs.getInt("repository_id")));
-                    c.put("author_id", String.valueOf(rs.getInt("author_id")));
+                    Map<String, Object> c = new LinkedHashMap<>();
+                    c.put("id", rs.getInt("id"));
+                    c.put("repository_id", rs.getInt("repository_id"));
+                    c.put("author_id", rs.getInt("author_id"));
                     c.put("message", rs.getString("message"));
-                    c.put("parent_commit_id", String.valueOf(rs.getInt("parent_commit_id")));
-                    c.put("parent_commit_id_2", String.valueOf(rs.getInt("parent_commit_id_2")));
+                    c.put("parent_commit_id", rs.getInt("parent_commit_id"));
+                    c.put("parent_commit_id_2", rs.getInt("parent_commit_id_2"));
                     c.put("created_at", rs.getString("created_at"));
                     commits.add(c);
                 }
@@ -628,184 +627,59 @@ public class ApiServer {
         } catch (SQLException | NumberFormatException e) { System.err.println("Database error: " + e.getMessage()); }
         return commits;
     }
-
-    // ファイル: HEADコミットのファイル一覧を返す（main.txtのみ）
-    private static List<Map<String, String>> fetchFilesByRepoAndBranch(String repositoryId, String branchId) {
-        List<Map<String, String>> files = new ArrayList<>();
-        if (repositoryId == null && branchId == null) return files;
-        String url = "jdbc:sqlite:database/database.db";
+    // --- コミット削除 ---
+    private static boolean deleteCommitById(String idStr) {
+        String sql = "DELETE FROM git_commit WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, Integer.parseInt(idStr));
+            int affected = pstmt.executeUpdate();
+            return affected > 0;
+        } catch (SQLException | NumberFormatException e) { return false; }
+    }
+    // --- 指定ブランチの最新ファイル取得 ---
+    private static List<Map<String, Object>> fetchFilesByBranch(String branchId) {
+        List<Map<String, Object>> files = new ArrayList<>();
+        if (branchId == null) return files;
         Integer headCommitId = null;
-        try (Connection conn = DriverManager.getConnection(url)) {
-            if (branchId != null) {
-                String sql = "SELECT head_commit_id FROM branch WHERE id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                    pstmt.setInt(1, Integer.parseInt(branchId));
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        if (rs.next()) {
-                            headCommitId = rs.getInt("head_commit_id");
-                            if (rs.wasNull()) headCommitId = null;
-                        }
-                    }
+        String sql = "SELECT head_commit_id FROM branch WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, Integer.parseInt(branchId));
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    headCommitId = rs.getInt("head_commit_id");
+                    if (rs.wasNull()) headCommitId = null;
                 }
-            } else if (repositoryId != null) {
-                String sql = "SELECT head_commit_id FROM branch WHERE repository_id = ? ORDER BY id LIMIT 1";
-                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                    pstmt.setInt(1, Integer.parseInt(repositoryId));
-                    try (ResultSet rs = pstmt.executeQuery()) {
-                        if (rs.next()) {
-                            headCommitId = rs.getInt("head_commit_id");
-                            if (rs.wasNull()) headCommitId = null;
+            }
+            if (headCommitId != null) {
+                String fileSql = "SELECT id, commit_id, content FROM file WHERE commit_id = ?";
+                try (PreparedStatement fp = conn.prepareStatement(fileSql)) {
+                    fp.setInt(1, headCommitId);
+                    try (ResultSet frs = fp.executeQuery()) {
+                        while (frs.next()) {
+                            Map<String, Object> f = new LinkedHashMap<>();
+                            f.put("commit_id", frs.getInt("commit_id"));
+                            f.put("file_id", frs.getInt("id"));
+                            f.put("text", frs.getString("content"));
+                            files.add(f);
                         }
                     }
                 }
             }
-            if (headCommitId == null) return files;
-            String fileSql = "SELECT id, commit_id, filename, content FROM file WHERE commit_id = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(fileSql)) {
-                pstmt.setInt(1, headCommitId);
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    while (rs.next()) {
-                        Map<String, String> f = new LinkedHashMap<>();
-                        f.put("id", String.valueOf(rs.getInt("id")));
-                        f.put("commit_id", String.valueOf(rs.getInt("commit_id")));
-                        f.put("filename", rs.getString("filename"));
-                        f.put("content", rs.getString("content"));
-                        files.add(f);
-                    }
-                }
-            }
-        } catch (SQLException | NumberFormatException e) { return files; }
+        } catch (SQLException | NumberFormatException e) { /* ignore */ }
         return files;
     }
-    private static String parseFieldFromJson(String json, String field) {
-        if (json.contains("\"" + field + "\":")) {
-            int startIndex = json.indexOf("\"" + field + "\":") + field.length() + 3;
-            int endIndex = json.indexOf('"', startIndex + 1);
-            return json.substring(startIndex + 1, endIndex);
-        }
-        return "";
-    }
-
-    // git風マージ本体
-    private static Map<String, Object> mergeBranches(String branchIdStr, String targetBranchIdStr) {
-        String url = "jdbc:sqlite:database/database.db";
-        Connection conn = null;
-        Map<String, Object> result = new HashMap<>();
-        try {
-            conn = DriverManager.getConnection(url);
-            conn.setAutoCommit(false);
-            // 1. 各ブランチのHEADコミット取得
-            Integer sourceHead = null, targetHead = null;
-            String sql = "SELECT id, head_commit_id FROM branch WHERE id = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setInt(1, Integer.parseInt(branchIdStr));
-                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) sourceHead = rs.getInt("head_commit_id"); }
-                pstmt.setInt(1, Integer.parseInt(targetBranchIdStr));
-                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) targetHead = rs.getInt("head_commit_id"); }
-            }
-            if (sourceHead == null || targetHead == null || sourceHead == 0 || targetHead == 0) {
-                result.put("conflict", true);
-                result.put("message", "No HEAD commit");
-                return result;
-            }
-            // 2. 各HEADコミットの内容取得
-            String getContentSql = "SELECT content FROM file WHERE commit_id = ? ORDER BY id LIMIT 1";
-            String sourceContent = "", targetContent = "";
-            try (PreparedStatement pstmt = conn.prepareStatement(getContentSql)) {
-                pstmt.setInt(1, sourceHead);
-                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) sourceContent = rs.getString("content"); }
-                pstmt.setInt(1, targetHead);
-                try (ResultSet rs = pstmt.executeQuery()) { if (rs.next()) targetContent = rs.getString("content"); }
-            }
-            // 3. 内容が同じなら何もしない
-            if (sourceContent.equals(targetContent)) {
-                result.put("conflict", false);
-                result.put("message", "Already up-to-date");
-                return result;
-            }
-            // 4. fast-forward判定（targetがsourceの祖先ならfast-forward）
-            if (isAncestor(conn, targetHead, sourceHead)) {
-                // targetブランチのhead_commit_idをsourceHeadに更新
-                String updateSql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
-                    pstmt.setInt(1, sourceHead);
-                    pstmt.setInt(2, Integer.parseInt(targetBranchIdStr));
-                    pstmt.executeUpdate();
-                }
-                conn.commit();
-                result.put("conflict", false);
-                result.put("message", "Fast-forward");
-                return result;
-            }
-            // 5. マージコミット作成（parent_commit_id, parent_commit_id_2両方セット）
-            String mergedContent = sourceContent + "\n" + targetContent;
-            String commitSql = "INSERT INTO git_commit(branch_id, author_id, message, parent_commit_id, parent_commit_id_2, created_at) VALUES(?, ?, ?, ?, ?, datetime('now'))";
-            int mergeCommitId = -1;
-            try (PreparedStatement pstmt = conn.prepareStatement(commitSql, PreparedStatement.RETURN_GENERATED_KEYS)) {
-                pstmt.setInt(1, Integer.parseInt(targetBranchIdStr));
-                pstmt.setInt(2, 1); // author_id=1固定（本来はAPIで指定）
-                pstmt.setString(3, "Merge branch " + branchIdStr);
-                pstmt.setInt(4, targetHead);
-                pstmt.setInt(5, sourceHead);
-                pstmt.executeUpdate();
-                try (ResultSet rs = pstmt.getGeneratedKeys()) { if (rs.next()) mergeCommitId = rs.getInt(1); }
-            }
-            if (mergeCommitId == -1) { conn.rollback(); result.put("conflict", true); result.put("message", "Merge commit failed"); return result; }
-            // ファイル保存
-            String fileSql = "INSERT INTO file(commit_id, filename, content) VALUES(?, ?, ?)";
-            try (PreparedStatement pstmt = conn.prepareStatement(fileSql)) {
-                pstmt.setInt(1, mergeCommitId);
-                pstmt.setString(2, "main.txt");
-                pstmt.setString(3, mergedContent);
-                pstmt.executeUpdate();
-            }
-            // head_commit_id更新
-            String updateSql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
-                pstmt.setInt(1, mergeCommitId);
-                pstmt.setInt(2, Integer.parseInt(targetBranchIdStr));
-                pstmt.executeUpdate();
-            }
-            conn.commit();
-            result.put("conflict", false);
-            result.put("message", "Merge success");
-        } catch (SQLException | NumberFormatException e) {
-            if (conn != null) try { conn.rollback(); } catch (SQLException ignore) {}
-            result.put("conflict", true);
-            result.put("message", "Merge error: " + e.getMessage());
-        } finally {
-            if (conn != null) try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ignore) {}
-        }
-        return result;
-    }
-    // 祖先判定（targetがsourceの祖先か）
-    private static boolean isAncestor(Connection conn, int ancestorId, int descendantId) throws SQLException {
-        if (ancestorId == descendantId) return true;
-        String sql = "SELECT parent_commit_id FROM git_commit WHERE id = ?";
-        int cur = descendantId;
-        while (cur != 0) {
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setInt(1, cur);
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        int parent = rs.getInt("parent_commit_id");
-                        if (parent == ancestorId) return true;
-                        if (parent == 0) break;
-                        cur = parent;
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-    // グラフAPI本体
+    // --- グラフAPI本体 ---
+    /**
+     * 指定リポジトリのコミット・ブランチ構造をグラフ形式（JSON）で返す
+     * nodes: コミット・ブランチノード, edges: コミット間・ブランチ→コミットの矢印
+     */
     private static String getGraphJson(String repositoryId) {
         String url = "jdbc:sqlite:database/database.db";
         List<String> nodes = new ArrayList<>();
         List<String> edges = new ArrayList<>();
-        List<String> branchPointers = new ArrayList<>(); // 追加: ブランチ→コミットの矢印
+        List<String> branchPointers = new ArrayList<>(); // ブランチ→コミットの矢印
         try (Connection conn = DriverManager.getConnection(url)) {
             // 全コミット取得（リポジトリ単位）
             String commitSql = "SELECT id, message, parent_commit_id, parent_commit_id_2 FROM git_commit WHERE repository_id = ?";
@@ -855,29 +729,10 @@ public class ApiServer {
         allEdges.addAll(branchPointers);
         return String.format("{\"nodes\":[%s],\"edges\":[%s]}", String.join(",", nodes), String.join(",", allEdges));
     }
-    // ブランチのhead_commit_id付け替え
-    private static boolean updateBranchHead(String branchIdStr, String commitIdStr) {
-        String url = "jdbc:sqlite:database/database.db";
-        String sql = "UPDATE branch SET head_commit_id = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(url);
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setInt(1, Integer.parseInt(commitIdStr));
-            pstmt.setInt(2, Integer.parseInt(branchIdStr));
-            int affected = pstmt.executeUpdate();
-            return affected > 0;
-        } catch (SQLException | NumberFormatException e) { return false; }
-    }
-    // コミット削除
-    private static boolean deleteCommitById(String idStr) {
-        String url = "jdbc:sqlite:database/database.db";
-        String sql = "DELETE FROM git_commit WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(url);
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setInt(1, Integer.parseInt(idStr));
-            int affected = pstmt.executeUpdate();
-            return affected > 0;
-        } catch (SQLException | NumberFormatException e) { return false; }
-    }
+
+    // ===============================
+    // DB初期化・マージ・強制マージの実装
+    // ===============================
 
     static {
         // JDBCドライバをロード
@@ -890,7 +745,29 @@ public class ApiServer {
         initializeDatabase();
     }
 
-    // 2ブランチのファイル内容が完全一致ならマージ、違えば両方の内容返す
+    /**
+     * DB初期化: 必要なテーブルを全て作成
+     */
+    private static void initializeDatabase() {
+        String[] sqls = new String[] {
+            "CREATE TABLE IF NOT EXISTS name (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE)",
+            "CREATE TABLE IF NOT EXISTS repository (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_id INTEGER)",
+            "CREATE TABLE IF NOT EXISTS branch (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, repository_id INTEGER, head_commit_id INTEGER)",
+            "CREATE TABLE IF NOT EXISTS git_commit (id INTEGER PRIMARY KEY AUTOINCREMENT, repository_id INTEGER, author_id INTEGER, message TEXT, parent_commit_id INTEGER, parent_commit_id_2 INTEGER, created_at DATETIME)",
+            "CREATE TABLE IF NOT EXISTS \"file\" (id INTEGER PRIMARY KEY AUTOINCREMENT, commit_id INTEGER, filename TEXT, content TEXT)"
+        };
+        try (Connection conn = getConnection()) {
+            for (String sql : sqls) {
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Database initialization error: " + e.getMessage());
+        }
+    }
+
+    // --- 厳密マージ: 2ブランチのファイル内容が完全一致ならマージ、違えば両方の内容返す ---
     private static Map<String, Object> mergeBranchesStrict(String branchId1, String branchId2) {
         Map<String, Object> result = new HashMap<>();
         String url = "jdbc:sqlite:database/database.db";
@@ -993,8 +870,12 @@ public class ApiServer {
         }
     }
 
-    // 強制マージ: 指定テキストで新コミット作成、両ブランチhead更新
-    private static boolean forceMerge(String branchId1, String branchId2, String text) {
+    // --- 強制マージ: 指定テキストで新コミット作成、両ブランチhead更新 ---
+    /**
+     * 2ブランチを強制的にマージし、指定テキストで新コミットを作成
+     * 両ブランチのHEADを新コミットに更新
+     */
+    public static boolean forceMerge(String branchId1, String branchId2, String text) {
         String url = "jdbc:sqlite:database/database.db";
         Connection conn = null;
         try {
