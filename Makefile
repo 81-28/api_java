@@ -95,6 +95,9 @@ test: compile-test
 	@echo "テストを実行中..."
 	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.DatabaseManagerTest
 	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.CommitManagerTest
+	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.MergeManagerTest
+	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.IntegrationTest
+	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.ApiHandlerTest
 
 # アプリケーションを実行
 run: compile
