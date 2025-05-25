@@ -1,744 +1,212 @@
 <!DOCTYPE html>
 <html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>バージョン管理サービスAPIテスト</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        form { margin-bottom: 20px; }
-        pre { background-color: #f4f4f4; padding: 10px; border: 1px solid #ddd; }
-        .section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
-        .section h2 { margin-top: 0; }
-        label { margin-right: 8px; }
-        select, input[type=text] { margin-right: 8px; }
-        button { margin-right: 8px; }
-    </style>
-    <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
-    <link href="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.css" rel="stylesheet" type="text/css" />
-</head>
-<body>
-    <h1>txtバージョン管理サービスAPIテスト</h1>
-
-    <div class="section">
-        <h2>ユーザー操作</h2>
-        <form id="userForm" onsubmit="event.preventDefault();">
-            <label for="username">ユーザー名:</label>
-            <input type="text" id="username" required>
-            <button type="button" onclick="createUser()">ユーザー作成</button>
-        </form>
-        <button onclick="getUsers()">ユーザー一覧取得</button>
-        <select id="userList" style="min-width:120px;"></select>
-        <button onclick="deleteUser()">ユーザー削除</button>
-    </div>
-
-    <div class="section">
-        <h2>リポジトリ操作</h2>
-        <form id="repoForm" onsubmit="event.preventDefault();">
-            <label for="repoName">リポジトリ名:</label>
-            <input type="text" id="repoName">
-            <label for="repoOwner">所有者(ユーザー):</label>
-            <select id="repoOwner"></select>
-            <button type="button" onclick="createRepository()">リポジトリ作成</button>
-        </form>
-        <label for="repoOwnerList">ユーザーで絞り込み:</label>
-        <select id="repoOwnerList"></select>
-        <button onclick="getRepositories()">リポジトリ一覧取得</button>
-        <select id="repoList" style="min-width:120px;"></select>
-        <button onclick="deleteRepository()">リポジトリ削除</button>
-    </div>
-    <div class="section">
-        <h2>ブランチ操作</h2>
-        <form id="branchForm" onsubmit="event.preventDefault();">
-            <label for="branchName">ブランチ名:</label>
-            <input type="text" id="branchName">
-            <label for="branchRepo">リポジトリ:</label>
-            <select id="branchRepo"></select>
-            <button type="button" onclick="createBranch()">ブランチ作成</button>
-        </form>
-        <label for="branchRepoList">リポジトリで絞り込み:</label>
-        <select id="branchRepoList"></select>
-        <button onclick="getBranches()">ブランチ一覧取得</button>
-        <select id="branchList" style="min-width:120px;"></select>
-        <button onclick="deleteBranch()">ブランチ削除</button>
-        <div style="margin-top:16px; border-top:1px dashed #ccc; padding-top:12px;">
-            <h3>ブランチの指すコミット付け替え</h3>
-            <label for="changeBranchSelect">ブランチ:</label>
-            <select id="changeBranchSelect"></select>
-            <label for="changeRepoSelect">リポジトリ:</label>
-            <select id="changeRepoSelect"></select>
-            <label for="changeCommitSelect">コミット:</label>
-            <select id="changeCommitSelect" style="min-width:180px;"></select>
-            <button onclick="changeBranchHead()">付け替え</button>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Git-like Version Control System</title>
+    <link rel="stylesheet" href="index.css" />
+    <script
+      type="text/javascript"
+      src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"
+    ></script>
+    <link
+      href="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Header -->
+      <header class="header">
+        <h1>Easy-Hub</h1>
+        <div class="user-selector">
+          <label for="currentUser">現在のユーザー:</label>
+          <select id="currentUser">
+            <option value="">ユーザーを選択</option>
+          </select>
+          <button id="refreshUsers" class="btn btn-secondary">更新</button>
         </div>
+      </header>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Left Panel -->
+        <div class="left-panel">
+          <!-- User Management -->
+          <div class="panel">
+            <h3>ユーザー管理</h3>
+            <div class="form-group">
+              <input
+                type="text"
+                id="newUsername"
+                placeholder="新しいユーザー名"
+              />
+              <button id="createUser" class="btn btn-primary">
+                ユーザー作成
+              </button>
+            </div>
+          </div>
+          <!-- Repository Info -->
+          <div class="panel">
+            <h3>リポジトリ</h3>
+            <div class="form-group">
+              <select title="リポジトリ" id="repositorySelect">
+                <option value="">リポジトリを選択</option>
+              </select>
+              <button id="refreshRepos" class="btn btn-secondary">更新</button>
+            </div>
+            <div class="form-group">
+              <input
+                type="text"
+                id="newRepoName"
+                placeholder="新しいリポジトリ名"
+              />
+              <button id="createRepo" class="btn btn-primary">作成</button>
+            </div>
+          </div>
+
+          <!-- Branch Info -->
+          <div class="panel">
+            <h3>ブランチ</h3>
+            <div class="form-group">
+              <select title="ブランチ" id="branchSelect">
+                <option value="">ブランチを選択</option>
+              </select>
+              <button id="refreshBranches" class="btn btn-secondary">
+                更新
+              </button>
+            </div>
+            <div class="form-group">
+              <input
+                type="text"
+                id="newBranchName"
+                placeholder="新しいブランチ名"
+              />
+              <button id="createBranch" class="btn btn-primary">作成</button>
+            </div>
+            <div class="current-branch">
+              <span>現在のブランチ: </span>
+              <span id="currentBranchName">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+          <!-- File Editor -->
+          <div class="panel">
+            <h3>ファイル編集</h3>
+            <div class="file-info">
+              <span>main.txt</span>
+              <button id="loadFile" class="btn btn-secondary">読み込み</button>
+            </div>
+            <textarea
+              id="fileContent"
+              placeholder="ファイル内容を入力してください..."
+            ></textarea>
+            <div class="commit-section">
+              <input
+                type="text"
+                id="commitMessage"
+                placeholder="コミットメッセージ"
+              />
+              <button id="createCommit" class="btn btn-primary">
+                コミット
+              </button>
+            </div>
+          </div>
+
+          <!-- Merge Section -->
+          <div class="panel">
+            <h3>マージ</h3>
+            <div class="form-group">
+              <label>マージ元:</label>
+              <select title="マージ元" id="mergeSource"></select>
+            </div>
+            <div class="form-group">
+              <label>マージ先:</label>
+              <select title="マージ先" id="mergeTarget"></select>
+            </div>
+            <button id="performMerge" class="btn btn-primary">
+              マージ実行
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Graph Visualization -->
+      <div class="graph-container">
+        <div class="panel">
+          <h3>コミットグラフ</h3>
+          <div class="graph-controls">
+            <button id="refreshGraph" class="btn btn-secondary">
+              グラフ更新
+            </button>
+            <div class="legend">
+              <span class="legend-item"
+                ><span class="legend-color commit"></span>コミット</span
+              >
+              <span class="legend-item"
+                ><span class="legend-color branch"></span>ブランチ</span
+              >
+              <span class="legend-item"
+                ><span class="legend-color merge"></span>マージ</span
+              >
+            </div>
+          </div>
+          <div id="graphVisualization"></div>
+        </div>
+      </div>
+
+      <!-- Status Panel -->
+      <div class="status-panel">
+        <div class="panel">
+          <h3>ステータス</h3>
+          <div id="statusContent">準備完了</div>
+        </div>
+      </div>
     </div>
-    <div class="section">
-        <h2>コミット操作</h2>
-        <form id="commitForm" onsubmit="event.preventDefault();">
-            <label for="commitBranch">ブランチ:</label>
-            <select id="commitBranch"></select>
-            <label for="commitMessage">メッセージ:</label>
-            <input type="text" id="commitMessage">
-            <label for="commitAuthor">ユーザー:</label>
-            <select id="commitAuthor"></select>
-            <br>
-            <label for="commitContent">内容:</label>
-            <textarea id="commitContent" rows="4" cols="60" placeholder="コミット内容"></textarea>
-            <br>
-            <button type="button" onclick="createCommit()">コミット作成</button>
-        </form>
-        <label for="commitRepoList">リポジトリで絞り込み:</label>
-        <select id="commitRepoList"></select>
-        <button onclick="getCommits()">コミット一覧取得</button>
-        <select id="commitList" style="min-width:120px;"></select>
-        <button onclick="deleteCommit()">コミット削除</button>
+
+    <!-- Merge Conflict Modal -->
+    <div id="mergeModal" class="modal">
+      <div class="modal-content">
+        <h3>マージコンフリクト</h3>
+        <div class="conflict-resolution">
+          <div class="conflict-option">
+            <h4>マージ元の内容:</h4>
+            <textarea
+              title="マージ元の内容"
+              id="sourceContent"
+              readonly
+            ></textarea>
+            <button id="selectSource" class="btn btn-primary">
+              この内容を採用
+            </button>
+          </div>
+          <div class="conflict-option">
+            <h4>マージ先の内容:</h4>
+            <textarea
+              title="マージ先の内容"
+              id="targetContent"
+              readonly
+            ></textarea>
+            <button id="selectTarget" class="btn btn-primary">
+              この内容を採用
+            </button>
+          </div>
+          <div class="conflict-option">
+            <h4>手動編集:</h4>
+            <textarea title="手動編集" id="manualContent"></textarea>
+            <button id="selectManual" class="btn btn-primary">
+              この内容で解決
+            </button>
+          </div>
+        </div>
+        <button id="cancelMerge" class="btn btn-secondary">キャンセル</button>
+      </div>
     </div>
-    <div class="section">
-        <h2>ファイル表示・マージ・グラフ</h2>
-        <label for="fileRepo">リポジトリ:</label>
-        <select id="fileRepo" onchange="updateFileBranchSelect()"></select>
-        <label for="fileBranch">ブランチ:</label>
-        <select id="fileBranch"></select>
-        <button onclick="getFiles()">ファイル表示</button>
-        <label for="mergeBranch">マージ元ブランチ:</label>
-        <select id="mergeBranch"></select>
-        <label for="mergeTargetBranch">マージ先ブランチ:</label>
-        <select id="mergeTargetBranch"></select>
-        <button onclick="mergeBranchApi()">マージ</button>
-        <label for="graphRepo">リポジトリ:</label>
-        <select id="graphRepo"></select>
-        <button onclick="getGraph()">グラフ表示</button>
-    </div>
-    <div id="graphView" style="width:100%;height:400px;border:1px solid #888;margin-top:12px;"></div>
 
-    <h2>APIレスポンス</h2>
-    <pre id="response"></pre>
-
-    <script>
-    const apiUserUrl = 'http://localhost:8080/api/user';
-    const apiRepoUrl = 'http://localhost:8080/api/repository';
-    const apiBranchUrl = 'http://localhost:8080/api/branch';
-    const apiCommitUrl = 'http://localhost:8080/api/commit';
-    const apiFileUrl = 'http://localhost:8080/api/file';
-    const apiMergeUrl = 'http://localhost:8080/api/merge';
-    const apiGraphUrl = 'http://localhost:8080/api/graph';
-
-    // --- ユーザー ---
-    async function createUser() {
-        const username = document.getElementById('username').value;
-        const responseElement = document.getElementById('response');
-        if (!username) return;
-        try {
-            const res = await fetch(apiUserUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            getUsers();
-        } catch (e) {
-            responseElement.textContent = 'Error: ' + e.message;
-        }
-    }
-
-    async function getUsers() {
-        const responseElement = document.getElementById('response');
-        try {
-            const res = await fetch(apiUserUrl, { method: 'GET' });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            // セレクトボックス更新
-            const userList = document.getElementById('userList');
-            const repoOwner = document.getElementById('repoOwner');
-            const repoOwnerList = document.getElementById('repoOwnerList');
-            userList.innerHTML = '';
-            repoOwner.innerHTML = '';
-            repoOwnerList.innerHTML = '';
-            if (data.users) {
-                data.users.forEach(u => {
-                    const opt1 = document.createElement('option');
-                    opt1.value = u.id;
-                    opt1.textContent = `${u.id}: ${u.username}`;
-                    userList.appendChild(opt1);
-                    const opt2 = document.createElement('option');
-                    opt2.value = u.id;
-                    opt2.textContent = `${u.id}: ${u.username}`;
-                    repoOwner.appendChild(opt2);
-                    const opt3 = document.createElement('option');
-                    opt3.value = u.id;
-                    opt3.textContent = `${u.id}: ${u.username}`;
-                    repoOwnerList.appendChild(opt3);
-                });
-            }
-        } catch (e) {
-            responseElement.textContent = 'Error: ' + e.message;
-        }
-    }
-
-    async function deleteUser() {
-        const userList = document.getElementById('userList');
-        const id = userList.value;
-        const responseElement = document.getElementById('response');
-        if (!id) return;
-        try {
-            const res = await fetch(apiUserUrl, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            getUsers();
-        } catch (e) {
-            responseElement.textContent = 'Error: ' + e.message;
-        }
-    }
-
-    // --- リポジトリ ---
-    async function createRepository() {
-        const name = document.getElementById('repoName').value;
-        const owner_id = document.getElementById('repoOwner').value;
-        const responseElement = document.getElementById('response');
-        if (!name || !owner_id) return;
-        try {
-            const res = await fetch(apiRepoUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, owner_id })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            await afterDataChange();
-        } catch (e) {
-            responseElement.textContent = 'Error: ' + e.message;
-        }
-    }
-
-    async function getRepositories() {
-        const owner_id = document.getElementById('repoOwnerList').value;
-        const responseElement = document.getElementById('response');
-        let url = apiRepoUrl;
-        if (owner_id) url += `?owner_id=${owner_id}`;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            // セレクトボックス更新
-            const repoList = document.getElementById('repoList');
-            repoList.innerHTML = '';
-            if (data.repositories) {
-                data.repositories.forEach(r => {
-                    const opt = document.createElement('option');
-                    opt.value = r.id;
-                    opt.textContent = `${r.id}: ${r.name} (owner:${r.owner_id})`;
-                    repoList.appendChild(opt);
-                });
-            }
-        } catch (e) {
-            responseElement.textContent = 'Error: ' + e.message;
-        }
-    }
-
-    async function deleteRepository() {
-        const repoList = document.getElementById('repoList');
-        const id = repoList.value;
-        const responseElement = document.getElementById('response');
-        if (!id) return;
-        try {
-            const res = await fetch(apiRepoUrl, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            await afterDataChange();
-        } catch (e) {
-            responseElement.textContent = 'Error: ' + e.message;
-        }
-    }
-
-    // --- ブランチ ---
-    async function createBranch() {
-        const name = document.getElementById('branchName').value;
-        const repository_id = document.getElementById('branchRepo').value;
-        const responseElement = document.getElementById('response');
-        if (!name || !repository_id) return;
-        try {
-            const res = await fetch(apiBranchUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, repository_id })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            await afterDataChange();
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-    async function getBranches() {
-        const repository_id = document.getElementById('branchRepoList').value;
-        const responseElement = document.getElementById('response');
-        let url = apiBranchUrl;
-        if (repository_id) url += `?repository_id=${repository_id}`;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            const branchList = document.getElementById('branchList');
-            branchList.innerHTML = '';
-            if (data.branches) {
-                data.branches.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b.id;
-                    opt.textContent = `${b.id}: ${b.name} (repo:${b.repository_id})`;
-                    branchList.appendChild(opt);
-                });
-            }
-            await updateBranchSelects();
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-    async function deleteBranch() {
-        const branchList = document.getElementById('branchList');
-        const id = branchList.value;
-        const responseElement = document.getElementById('response');
-        if (!id) return;
-        try {
-            const res = await fetch(apiBranchUrl, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            getBranches();
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-    // --- コミット ---
-    async function createCommit() {
-        const branch_id = document.getElementById('commitBranch').value;
-        const message = document.getElementById('commitMessage').value;
-        const author_id = document.getElementById('commitAuthor').value;
-        const content = document.getElementById('commitContent').value;
-        const responseElement = document.getElementById('response');
-        if (!branch_id || !message || !author_id) return;
-        try {
-            const res = await fetch(apiCommitUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch_id, message, author_id, content })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            getCommits();
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-    async function getCommits() {
-        const repository_id = document.getElementById('commitRepoList').value;
-        const responseElement = document.getElementById('response');
-        let url = apiCommitUrl;
-        if (repository_id) url += `?repository_id=${repository_id}`;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            const commitList = document.getElementById('commitList');
-            commitList.innerHTML = '';
-            if (data.commits) {
-                data.commits.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c.id;
-                    opt.textContent = `${c.id}: ${c.message} (repo:${c.repository_id})`;
-                    commitList.appendChild(opt);
-                });
-            }
-            // 付け替えUIのコミット選択肢も更新
-            if (typeof updateChangeCommitSelects === 'function') {
-                await updateChangeCommitSelects();
-            }
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-    async function deleteCommit() {
-        const commitList = document.getElementById('commitList');
-        const id = commitList.value;
-        const responseElement = document.getElementById('response');
-        if (!id) return;
-        try {
-            const res = await fetch(apiCommitUrl, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            getCommits();
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-    // --- ファイル ---
-    async function getFiles() {
-        const branch_id = document.getElementById('fileBranch').value;
-        const responseElement = document.getElementById('response');
-        if (!branch_id) return;
-        try {
-            const url = apiFileUrl + `?branch_id=${branch_id}`;
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            // レスポンスを整形表示
-            if (data.files && data.files.length > 0) {
-                let text = 'ファイル一覧\n';
-                data.files.forEach(f => {
-                    text += `commit_id: ${f.commit_id}\nfile_id: ${f.file_id}\ntext:\n${f.text}\n---\n`;
-                });
-                responseElement.textContent = text;
-            } else {
-                responseElement.textContent = 'ファイルがありません';
-            }
-        } catch (e) {
-            responseElement.textContent = 'Error: ' + e.message;
-        }
-    }
-
-    // ファイル表示用ブランチセレクトの更新
-    async function updateFileBranchSelect() {
-        const repoId = document.getElementById('fileRepo').value;
-        const branchSel = document.getElementById('fileBranch');
-        branchSel.innerHTML = '';
-        if (!repoId) return;
-        let url = apiBranchUrl + `?repository_id=${repoId}`;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            if (data.branches) {
-                data.branches.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b.id;
-                    opt.textContent = `${b.id}: ${b.name}`;
-                    branchSel.appendChild(opt);
-                });
-            }
-        } catch (e) {}
-    }
-
-    // afterDataChange時にもfileBranchを更新
-    const _oldAfterDataChange2 = afterDataChange;
-    afterDataChange = async function() {
-        await _oldAfterDataChange2();
-        await updateFileBranchSelect();
-    };
-    // --- マージ ---
-    async function mergeBranchApi() {
-        const branch_id_1 = document.getElementById('mergeBranch').value;
-        const branch_id_2 = document.getElementById('mergeTargetBranch').value;
-        const responseElement = document.getElementById('response');
-        if (!branch_id_1 || !branch_id_2) return;
-        try {
-            const res = await fetch(apiMergeUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch_id_1, branch_id_2 })
-            });
-            const data = await res.json();
-            if (data.success) {
-                responseElement.textContent = JSON.stringify(data, null, 2);
-                await afterDataChange();
-            } else {
-                // マージ失敗時: 2テキスト比較UIを表示
-                showMergeConflictUI(data, branch_id_1, branch_id_2);
-            }
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-
-    // マージ失敗時のUI
-    function showMergeConflictUI(data, branch_id_1, branch_id_2) {
-        const responseElement = document.getElementById('response');
-        // UI生成
-        let html = `<div style='display:flex;gap:16px;'>` +
-            `<div style='flex:1;'><b>ブランチ1</b><textarea id='mergeText1' style='width:100%;height:120px;'>${data.text_1 || ''}</textarea></div>` +
-            `<div style='flex:1;'><b>ブランチ2</b><textarea id='mergeText2' style='width:100%;height:120px;'>${data.text_2 || ''}</textarea></div>` +
-            `</div>` +
-            `<div style='margin-top:8px;'>` +
-            `<button onclick='window.applyForceMerge(1)'>ブランチ1を採用</button>` +
-            `<button onclick='window.applyForceMerge(2)'>ブランチ2を採用</button>` +
-            `<button onclick='window.editForceMerge()'>自分で編集</button>` +
-            `</div>` +
-            `<div id='editMergeArea' style='margin-top:8px;display:none;'><textarea id='editMergeText' style='width:100%;height:120px;'></textarea><br><button onclick='window.submitEditForceMerge()'>この内容で強制マージ</button></div>`;
-        responseElement.innerHTML = html;
-        // グローバル関数でボタンから呼べるように
-        window.applyForceMerge = async function(which) {
-            let text = (which === 1) ? document.getElementById('mergeText1').value : document.getElementById('mergeText2').value;
-            await doForceMerge(branch_id_1, branch_id_2, text);
-        };
-        window.editForceMerge = function() {
-            document.getElementById('editMergeArea').style.display = '';
-            document.getElementById('editMergeText').value = document.getElementById('mergeText1').value;
-        };
-        window.submitEditForceMerge = async function() {
-            let text = document.getElementById('editMergeText').value;
-            await doForceMerge(branch_id_1, branch_id_2, text);
-        };
-    }
-    // 強制マージAPI呼び出し
-    async function doForceMerge(branch_id_1, branch_id_2, text) {
-        const responseElement = document.getElementById('response');
-        try {
-            const res = await fetch('http://localhost:8080/api/force-merge', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ branch_id_1, branch_id_2, text })
-            });
-            const data = await res.json();
-            if (data.success) {
-                responseElement.textContent = '強制マージ成功\n' + JSON.stringify(data, null, 2);
-                await afterDataChange();
-            } else {
-                responseElement.textContent = '強制マージ失敗\n' + JSON.stringify(data, null, 2);
-            }
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-    // --- グラフ ---
-    async function getGraph() {
-        const repository_id = document.getElementById('graphRepo').value;
-        const responseElement = document.getElementById('response');
-        if (!repository_id) return;
-        let url = apiGraphUrl + `?repository_id=${repository_id}`;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            // グラフ描画
-            drawGraph(data);
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-
-    function drawGraph(data) {
-        const container = document.getElementById('graphView');
-        if (!data.nodes || !data.edges) {
-            container.innerHTML = '<span style="color:red">グラフデータがありません</span>';
-            return;
-        }
-        // vis-network用データ変換
-        const nodes = new vis.DataSet(data.nodes.map(n => ({
-            id: n.id,
-            label: n.label + (n.branch ? `\n[${n.branch}]` : ''),
-            shape: n.shape || 'box',
-            color: n.color || (n.branch ? undefined : '#eee')
-        })));
-        const edges = new vis.DataSet(data.edges.map(e => ({
-            from: e.from,
-            to: e.to,
-            arrows: 'to',
-            color: e.color || undefined,
-            dashes: e.dashes || false,
-            label: e.label || undefined
-        })));
-        const options = {
-            layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed' } },
-            nodes: { shape: 'box', font: { size: 14 } },
-            edges: { arrows: 'to', smooth: true },
-            physics: false
-        };
-        container.innerHTML = '';
-        new vis.Network(container, { nodes, edges }, options);
-    }
-    // --- セレクトボックス連動 ---
-    async function updateRepoSelects() {
-        // リポジトリ一覧取得し、各selectを更新
-        let url = apiRepoUrl;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            const repoSelects = [
-                document.getElementById('branchRepo'),
-                document.getElementById('branchRepoList'),
-                document.getElementById('fileRepo'),
-                document.getElementById('graphRepo'),
-                document.getElementById('commitRepoList')
-            ];
-            repoSelects.forEach(sel => { sel.innerHTML = ''; });
-            if (data.repositories) {
-                data.repositories.forEach(r => {
-                    repoSelects.forEach(sel => {
-                        const opt = document.createElement('option');
-                        opt.value = r.id;
-                        opt.textContent = `${r.id}: ${r.name}`;
-                        sel.appendChild(opt.cloneNode(true));
-                    });
-                });
-            }
-        } catch (e) {}
-    }
-    async function updateBranchSelects() {
-        // ブランチ一覧取得し、各selectを更新
-        let url = apiBranchUrl;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            const branchSelects = [
-                document.getElementById('commitBranch'),
-                document.getElementById('mergeBranch'),
-                document.getElementById('mergeTargetBranch')
-            ];
-            branchSelects.forEach(sel => { sel.innerHTML = ''; });
-            if (data.branches) {
-                data.branches.forEach(b => {
-                    branchSelects.forEach(sel => {
-                        const opt = document.createElement('option');
-                        opt.value = b.id;
-                        opt.textContent = `${b.id}: ${b.name}`;
-                        sel.appendChild(opt.cloneNode(true));
-                    });
-                });
-            }
-        } catch (e) {}
-    }
-    async function updateUserSelects() {
-        // ユーザー一覧取得し、コミット用selectを更新
-        try {
-            const res = await fetch(apiUserUrl, { method: 'GET' });
-            const data = await res.json();
-            const commitAuthor = document.getElementById('commitAuthor');
-            commitAuthor.innerHTML = '';
-            if (data.users) {
-                data.users.forEach(u => {
-                    const opt = document.createElement('option');
-                    opt.value = u.id;
-                    opt.textContent = `${u.id}: ${u.username}`;
-                    commitAuthor.appendChild(opt);
-                });
-            }
-        } catch (e) {}
-    }
-    // --- 連動 ---
-    async function updateAllSelects() {
-        await updateRepoSelects();
-        await updateBranchSelects();
-        await updateUserSelects();
-    }
-    // 各操作後にセレクトボックスを更新
-    async function afterDataChange() {
-        await getUsers();
-        await getRepositories();
-        await getBranches();
-        await getCommits();
-        await updateAllSelects();
-    }
-    // 初回ロード時
-    window.onload = afterDataChange;
-
-    // --- 付け替えUIの初期化・連動 ---
-    async function updateChangeBranchSelects() {
-        // ブランチ一覧
-        let url = apiBranchUrl;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            const branchSel = document.getElementById('changeBranchSelect');
-            branchSel.innerHTML = '';
-            if (data.branches) {
-                data.branches.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b.id;
-                    opt.textContent = `${b.id}: ${b.name}`;
-                    branchSel.appendChild(opt);
-                });
-            }
-        } catch (e) {}
-    }
-    async function updateChangeRepoSelects() {
-        // リポジトリ一覧
-        let url = apiRepoUrl;
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            const data = await res.json();
-            const repoSel = document.getElementById('changeRepoSelect');
-            repoSel.innerHTML = '';
-            if (data.repositories) {
-                data.repositories.forEach(r => {
-                    const opt = document.createElement('option');
-                    opt.value = r.id;
-                    opt.textContent = `${r.id}: ${r.name}`;
-                    repoSel.appendChild(opt);
-                });
-            }
-        } catch (e) {}
-    }
-    async function updateChangeCommitSelects() {
-        // 選択リポジトリの全コミット一覧
-        const repoId = document.getElementById('changeRepoSelect').value;
-        const commitSel = document.getElementById('changeCommitSelect');
-        commitSel.innerHTML = '';
-        if (!repoId) return;
-        // まず全ブランチ取得
-        let branchUrl = apiBranchUrl + `?repository_id=${repoId}`;
-        try {
-            const branchRes = await fetch(branchUrl, { method: 'GET' });
-            const branchData = await branchRes.json();
-            let allCommits = [];
-            if (branchData.branches) {
-                // 各ブランチのコミットを取得
-                for (const b of branchData.branches) {
-                    let commitUrl = apiCommitUrl + `?branch_id=${b.id}`;
-                    const commitRes = await fetch(commitUrl, { method: 'GET' });
-                    const commitData = await commitRes.json();
-                    if (commitData.commits) {
-                        allCommits = allCommits.concat(commitData.commits.map(c => ({...c, branchName: b.name})));
-                    }
-                }
-            }
-            // 重複除去（idで）
-            const seen = new Set();
-            allCommits = allCommits.filter(c => {
-                if (seen.has(c.id)) return false;
-                seen.add(c.id); return true;
-            });
-            // ソート（id降順＝新しい順）
-            allCommits.sort((a,b)=>Number(b.id)-Number(a.id));
-            allCommits.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.id;
-                opt.textContent = `${c.id}: ${c.message} (branch:${c.branchName})`;
-                commitSel.appendChild(opt);
-            });
-        } catch (e) {}
-    }
-    // 付け替え実行
-    async function changeBranchHead() {
-        const branchId = document.getElementById('changeBranchSelect').value;
-        const commitId = document.getElementById('changeCommitSelect').value;
-        const responseElement = document.getElementById('response');
-        if (!branchId || !commitId) return;
-        try {
-            const res = await fetch(apiBranchUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: branchId, commit_id: commitId })
-            });
-            const data = await res.json();
-            responseElement.textContent = JSON.stringify(data, null, 2);
-            await afterDataChange();
-        } catch (e) { responseElement.textContent = 'Error: ' + e.message; }
-    }
-    // セレクト連動
-    // ブランチ・リポジトリ選択時にコミットリスト更新
-    ['changeRepoSelect','changeBranchSelect'].forEach(id => {
-        document.addEventListener('DOMContentLoaded', ()=>{
-            document.getElementById(id).addEventListener('change', updateChangeCommitSelects);
-        });
-    });
-    // afterDataChangeにも追加
-    const _oldAfterDataChange = afterDataChange;
-    afterDataChange = async function() {
-        await _oldAfterDataChange();
-        await updateChangeBranchSelects();
-        await updateChangeRepoSelects();
-        await updateChangeCommitSelects();
-    };
-    // 初期化
-    window.addEventListener('DOMContentLoaded', async ()=>{
-        await updateChangeBranchSelects();
-        await updateChangeRepoSelects();
-        await updateChangeCommitSelects();
-    });
-    </script>
-</body>
+    <script src="scripts.js"></script>
+  </body>
 </html>
