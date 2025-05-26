@@ -1,3 +1,12 @@
+# OS判定に基づいてSHELLとSHELLFLAGSを設定
+ifeq ($(OS),Windows_NT)
+    SHELL = cmd.exe
+    .SHELLFLAGS = /C
+else
+    SHELL = /bin/sh
+    .SHELLFLAGS = -c
+endif
+
 # Git APIサーバー用Makefile（テスト対応版）
 
 # 変数定義(デバッグ用)
@@ -49,6 +58,28 @@ TEST_CP = $(BIN_DIR)$(CP_SEP)$(LIBS)
 JAVA_FILES = $(wildcard src/*.java)
 TEST_FILES = $(wildcard test/*.java)
 
+# ===== OSごとにコマンドを変数で一元管理 =====
+ifeq ($(OS),Windows_NT)
+	MKDIR_DB = if not exist $(DB_DIR) mkdir $(DB_DIR)
+	MKDIR_TEST = if not exist $(TEST_DIR) mkdir $(TEST_DIR)
+	MKDIR_BIN = if not exist $(BIN_DIR) mkdir $(BIN_DIR)
+	RM_BIN = if exist $(BIN_DIR) rmdir /s /q $(BIN_DIR)
+	OPEN = start
+	TEST_COMPILE = javac -cp "$(TEST_CP)" -d $(BIN_DIR) $(TEST_DIR)\*.java && echo テストコードのコンパイル完了
+else
+	MKDIR_DB = mkdir -p $(DB_DIR)
+	MKDIR_TEST = mkdir -p $(TEST_DIR)
+	MKDIR_BIN = mkdir -p $(BIN_DIR)
+	RM_BIN = rm -rf $(BIN_DIR)
+	OPEN = open
+	TEST_COMPILE = if [ -n "$(TEST_FILES)" ]; then \
+		javac -cp $(TEST_CP) -d $(BIN_DIR) $(TEST_FILES); \
+		echo "テストコードのコンパイル完了"; \
+	else \
+		echo "テストファイルが見つかりません"; \
+	fi
+endif
+
 # デフォルトターゲット（コマンド一覧表示）
 all:
 	@echo "利用可能なコマンド:"
@@ -62,19 +93,19 @@ all:
 
 # セットアップ（データベースディレクトリ作成）
 setup:
-	@mkdir -p $(DB_DIR)
-	@mkdir -p $(TEST_DIR)
+	@$(MKDIR_DB)
+	@$(MKDIR_TEST)
 	@echo "データベースディレクトリを作成しました"
-	make compile
-	make run
+	$(MAKE) compile
+	$(MAKE) run
 
 # テストページを開く
 open:
-	open http://127.0.0.1:5501/$(local_url)
+	@$(OPEN) http://127.0.0.1:5501/$(local_url)
 
 # ビルド前準備
 prepare:
-	@mkdir -p $(BIN_DIR)
+	@$(MKDIR_BIN)
 
 # ソースコードをコンパイル
 compile: prepare
@@ -83,12 +114,7 @@ compile: prepare
 
 # テストコードをコンパイル
 compile-test: compile
-	@if [ -n "$(TEST_FILES)" ]; then \
-		javac -cp $(TEST_CP) -d $(BIN_DIR) $(TEST_FILES); \
-		echo "テストコードのコンパイル完了"; \
-	else \
-		echo "テストファイルが見つかりません"; \
-	fi
+	@$(TEST_COMPILE)
 
 # テストを実行
 test: compile-test
@@ -105,7 +131,7 @@ run: compile
 
 # クリーン
 clean:
-	@rm -rf $(BIN_DIR)
+	@$(RM_BIN)
 	@echo "コンパイル生成物を削除しました"
 
-.PHONY: all setup prepare compile compile-test test run clean
+.PHONY: all setup prepare compile compile-test test run open clean
