@@ -1,12 +1,18 @@
-SHELL = cmd.exe
-.SHELLFLAGS = /C
+# OSåˆ¤å®šã«åŸºã¥ã„ã¦SHELLã¨SHELLFLAGSã‚’è¨­å®š
+ifeq ($(OS),Windows_NT)
+    SHELL = cmd.exe
+    .SHELLFLAGS = /C
+else
+    SHELL = /bin/sh
+    .SHELLFLAGS = -c
+endif
 
-# Git APIƒT[ƒo[—pMakefileiƒeƒXƒg‘Î‰”Åj
+# Git APIã‚µãƒ¼ãƒãƒ¼ç”¨Makefileï¼ˆãƒ†ã‚¹ãƒˆå¯¾å¿œç‰ˆï¼‰
 
-# •Ï”’è‹`(ƒfƒoƒbƒO—p)
+# å¤‰æ•°å®šç¾©(ãƒ‡ãƒãƒƒã‚°ç”¨)
 local_url = public/test.html
 
-# •Ï”’è‹`
+# å¤‰æ•°å®šç¾©
 SRC_DIR = src
 TEST_DIR = test
 BIN_DIR = bin
@@ -15,51 +21,51 @@ DB_DIR = database
 JUNIT_JAR = $(LIB_DIR)/junit-4.13.2.jar
 HAMCREST_JAR = $(LIB_DIR)/hamcrest-core-1.3.jar
 
-# OS‚ÆƒA[ƒLƒeƒNƒ`ƒƒ‚Ì”»’è
+# OSã¨ã‚¢ãƒ¼ã‚­ãƒ†ã‚¯ãƒãƒ£ã®åˆ¤å®š
 ifeq ($(OS),Windows_NT)
     SQLITE_JAR = $(LIB_DIR)/sqlite-jdbc-3.30.1.jar
 else
-    # Mac‚Ìê‡
+    # Macã®å ´åˆ
     ifeq ($(shell uname),Darwin)
-        # M2ƒ`ƒbƒviARM64j‚Ìê‡
+        # M2ãƒãƒƒãƒ—ï¼ˆARM64ï¼‰ã®å ´åˆ
         ifeq ($(shell uname -m),arm64)
             SQLITE_JAR = $(LIB_DIR)/sqlite-jdbc.jar
         else
             SQLITE_JAR = $(LIB_DIR)/sqlite-jdbc-3.30.1.jar
         endif
     else
-        # ‚»‚Ì‘¼‚ÌOS‚Ìê‡
+        # ãã®ä»–ã®OSã®å ´åˆ
         SQLITE_JAR = $(LIB_DIR)/sqlite-jdbc-3.30.1.jar
     endif
 endif
 
 MAIN_CLASS = src.GitApiServer
 
-# OS”»’è
+# OSåˆ¤å®š
 ifeq ($(OS),Windows_NT)
     CP_SEP = ;
 else
     CP_SEP = :
 endif
 
-# ƒNƒ‰ƒXƒpƒXİ’è
+# ã‚¯ãƒ©ã‚¹ãƒ‘ã‚¹è¨­å®š
 LIBS = $(SQLITE_JAR)$(CP_SEP)$(JUNIT_JAR)$(CP_SEP)$(HAMCREST_JAR)
 COMPILE_CP = .$(CP_SEP)$(LIBS)
 RUN_CP = $(BIN_DIR)$(CP_SEP)$(LIBS)
 TEST_CP = $(BIN_DIR)$(CP_SEP)$(LIBS)
 
-# ƒRƒ“ƒpƒCƒ‹‘ÎÛ‚Ìƒtƒ@ƒCƒ‹
+# ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«å¯¾è±¡ã®ãƒ•ã‚¡ã‚¤ãƒ«
 JAVA_FILES = $(wildcard src/*.java)
 TEST_FILES = $(wildcard test/*.java)
 
-# ===== OS‚²‚Æ‚ÉƒRƒ}ƒ“ƒh‚ğ•Ï”‚ÅˆêŒ³ŠÇ— =====
+# ===== OSã”ã¨ã«ã‚³ãƒãƒ³ãƒ‰ã‚’å¤‰æ•°ã§ä¸€å…ƒç®¡ç† =====
 ifeq ($(OS),Windows_NT)
 	MKDIR_DB = if not exist $(DB_DIR) mkdir $(DB_DIR)
 	MKDIR_TEST = if not exist $(TEST_DIR) mkdir $(TEST_DIR)
 	MKDIR_BIN = if not exist $(BIN_DIR) mkdir $(BIN_DIR)
 	RM_BIN = if exist $(BIN_DIR) rmdir /s /q $(BIN_DIR)
 	OPEN = start
-	TEST_COMPILE = javac -cp "$(TEST_CP)" -d $(BIN_DIR) $(TEST_DIR)\*.java && echo ƒeƒXƒgƒR[ƒh‚ÌƒRƒ“ƒpƒCƒ‹Š®—¹
+	TEST_COMPILE = javac -cp "$(TEST_CP)" -d $(BIN_DIR) $(TEST_DIR)\*.java && echo ãƒ†ã‚¹ãƒˆã‚³ãƒ¼ãƒ‰ã®ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«å®Œäº†
 else
 	MKDIR_DB = mkdir -p $(DB_DIR)
 	MKDIR_TEST = mkdir -p $(TEST_DIR)
@@ -68,64 +74,64 @@ else
 	OPEN = open
 	TEST_COMPILE = if [ -n "$(TEST_FILES)" ]; then \
 		javac -cp $(TEST_CP) -d $(BIN_DIR) $(TEST_FILES); \
-		echo "ƒeƒXƒgƒR[ƒh‚ÌƒRƒ“ƒpƒCƒ‹Š®—¹"; \
+		echo "ãƒ†ã‚¹ãƒˆã‚³ãƒ¼ãƒ‰ã®ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«å®Œäº†"; \
 	else \
-		echo "ƒeƒXƒgƒtƒ@ƒCƒ‹‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñ"; \
+		echo "ãƒ†ã‚¹ãƒˆãƒ•ã‚¡ã‚¤ãƒ«ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“"; \
 	fi
 endif
 
-# ƒfƒtƒHƒ‹ƒgƒ^[ƒQƒbƒgiƒRƒ}ƒ“ƒhˆê——•\¦j
+# ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã‚¿ãƒ¼ã‚²ãƒƒãƒˆï¼ˆã‚³ãƒãƒ³ãƒ‰ä¸€è¦§è¡¨ç¤ºï¼‰
 all:
-	@echo "—˜—p‰Â”\‚ÈƒRƒ}ƒ“ƒh:"
-	@echo "  make setup      - ƒf[ƒ^ƒx[ƒXƒfƒBƒŒƒNƒgƒŠ‚ğì¬"
-	@echo "  make compile    - ƒ\[ƒXƒR[ƒh‚ğƒRƒ“ƒpƒCƒ‹"
-	@echo "  make compile-test - ƒeƒXƒgƒR[ƒh‚ğƒRƒ“ƒpƒCƒ‹"
-	@echo "  make test       - ƒeƒXƒg‚ğÀs"
-	@echo "  make run        - ƒAƒvƒŠƒP[ƒVƒ‡ƒ“‚ğÀs"
-	@echo "  make open       - ƒuƒ‰ƒEƒU‚ÅƒeƒXƒgƒy[ƒW‚ğŠJ‚­"
-	@echo "  make clean      - ƒRƒ“ƒpƒCƒ‹¶¬•¨‚ğíœ"
+	@echo "åˆ©ç”¨å¯èƒ½ãªã‚³ãƒãƒ³ãƒ‰:"
+	@echo "  make setup      - ãƒ‡ãƒ¼ã‚¿ãƒ™ãƒ¼ã‚¹ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚’ä½œæˆ"
+	@echo "  make compile    - ã‚½ãƒ¼ã‚¹ã‚³ãƒ¼ãƒ‰ã‚’ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«"
+	@echo "  make compile-test - ãƒ†ã‚¹ãƒˆã‚³ãƒ¼ãƒ‰ã‚’ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«"
+	@echo "  make test       - ãƒ†ã‚¹ãƒˆã‚’å®Ÿè¡Œ"
+	@echo "  make run        - ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³ã‚’å®Ÿè¡Œ"
+	@echo "  make open       - ãƒ–ãƒ©ã‚¦ã‚¶ã§ãƒ†ã‚¹ãƒˆãƒšãƒ¼ã‚¸ã‚’é–‹ã"
+	@echo "  make clean      - ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ç”Ÿæˆç‰©ã‚’å‰Šé™¤"
 
-# ƒZƒbƒgƒAƒbƒviƒf[ƒ^ƒx[ƒXƒfƒBƒŒƒNƒgƒŠì¬j
+# ã‚»ãƒƒãƒˆã‚¢ãƒƒãƒ—ï¼ˆãƒ‡ãƒ¼ã‚¿ãƒ™ãƒ¼ã‚¹ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªä½œæˆï¼‰
 setup:
 	@$(MKDIR_DB)
 	@$(MKDIR_TEST)
-	@echo "ƒf[ƒ^ƒx[ƒXƒfƒBƒŒƒNƒgƒŠ‚ğì¬‚µ‚Ü‚µ‚½"
+	@echo "ãƒ‡ãƒ¼ã‚¿ãƒ™ãƒ¼ã‚¹ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚’ä½œæˆã—ã¾ã—ãŸ"
 	$(MAKE) compile
 	$(MAKE) run
 
-# ƒeƒXƒgƒy[ƒW‚ğŠJ‚­
+# ãƒ†ã‚¹ãƒˆãƒšãƒ¼ã‚¸ã‚’é–‹ã
 open:
 	@$(OPEN) http://127.0.0.1:5501/$(local_url)
 
-# ƒrƒ‹ƒh‘O€”õ
+# ãƒ“ãƒ«ãƒ‰å‰æº–å‚™
 prepare:
 	@$(MKDIR_BIN)
 
-# ƒ\[ƒXƒR[ƒh‚ğƒRƒ“ƒpƒCƒ‹
+# ã‚½ãƒ¼ã‚¹ã‚³ãƒ¼ãƒ‰ã‚’ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«
 compile: prepare
 	javac -cp $(COMPILE_CP) -d $(BIN_DIR) $(JAVA_FILES)
-	@echo "ƒ\[ƒXƒR[ƒh‚ÌƒRƒ“ƒpƒCƒ‹Š®—¹"
+	@echo "ã‚½ãƒ¼ã‚¹ã‚³ãƒ¼ãƒ‰ã®ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«å®Œäº†"
 
-# ƒeƒXƒgƒR[ƒh‚ğƒRƒ“ƒpƒCƒ‹
+# ãƒ†ã‚¹ãƒˆã‚³ãƒ¼ãƒ‰ã‚’ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«
 compile-test: compile
 	@$(TEST_COMPILE)
 
-# ƒeƒXƒg‚ğÀs
+# ãƒ†ã‚¹ãƒˆã‚’å®Ÿè¡Œ
 test: compile-test
-	@echo "ƒeƒXƒg‚ğÀs’†..."
+	@echo "ãƒ†ã‚¹ãƒˆã‚’å®Ÿè¡Œä¸­..."
 	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.DatabaseManagerTest
 	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.CommitManagerTest
 	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.MergeManagerTest
 	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.IntegrationTest
 	java -cp $(TEST_CP) org.junit.runner.JUnitCore test.ApiHandlerTest
 
-# ƒAƒvƒŠƒP[ƒVƒ‡ƒ“‚ğÀs
+# ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³ã‚’å®Ÿè¡Œ
 run: compile
 	java -cp $(RUN_CP) $(MAIN_CLASS)
 
-# ƒNƒŠ[ƒ“
+# ã‚¯ãƒªãƒ¼ãƒ³
 clean:
 	@$(RM_BIN)
-	@echo "ƒRƒ“ƒpƒCƒ‹¶¬•¨‚ğíœ‚µ‚Ü‚µ‚½"
+	@echo "ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ç”Ÿæˆç‰©ã‚’å‰Šé™¤ã—ã¾ã—ãŸ"
 
 .PHONY: all setup prepare compile compile-test test run open clean
