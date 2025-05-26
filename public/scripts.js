@@ -823,9 +823,12 @@ class AppController {
    * @param {string} targetId - マージ先ID
    */
   showMergeConflictModal(conflictData, sourceId, targetId) {
-    document.getElementById("sourceContent").value = conflictData.text_1 || "";
-    document.getElementById("targetContent").value = conflictData.text_2 || "";
-    document.getElementById("manualContent").value = conflictData.text_1 || "";
+    // サーバーからの\nを改行に変換
+    const text1 = (conflictData.text_1 || "").replace(/\\n/g, "\n");
+    const text2 = (conflictData.text_2 || "").replace(/\\n/g, "\n");
+    document.getElementById("sourceContent").value = text1;
+    document.getElementById("targetContent").value = text2;
+    document.getElementById("manualContent").value = text1;
 
     this.pendingMerge = { sourceId, targetId };
     UIHelper.showModal(elements.mergeModal);
